@@ -1,33 +1,37 @@
-from __future__ import annotations
-
 import argparse
 import json
-import time
-from dataclasses import dataclass
 from pathlib import Path
 from tkinter import BOTH, CENTER, Tk, font, ttk
 
 from .config import RuntimeConfig
 
 
-@dataclass
 class OverlayState:
-    status: str = "waiting"
-    title: str = ""
-    artist: str = ""
-    album: str = ""
-    score: float = 0.0
-    recognized_at: str = ""
-    message: str = ""
+    def __init__(
+        self,
+        status="waiting",
+        title="",
+        artist="",
+        album="",
+        score=0.0,
+        recognized_at="",
+        message="",
+    ):
+        self.status = status
+        self.title = title
+        self.artist = artist
+        self.album = album
+        self.score = score
+        self.recognized_at = recognized_at
+        self.message = message
 
 
 class NowPlayingOverlay:
-    def __init__(self, config: RuntimeConfig) -> None:
+    def __init__(self, config):
         self.config = config
         self.state_path = Path(config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json"))
         self.poll_ms = config.int("OVERLAY_POLL_MSEC", 1000)
         self.show_unrecognized = config.bool("OVERLAY_SHOW_UNRECOGNIZED", False)
-        self.stale_seconds = config.int("OVERLAY_STALE_SECONDS", 900)
 
         self.root = Tk()
         self.root.title("Now Playing")
@@ -93,7 +97,7 @@ class NowPlayingOverlay:
         self.artist_label.place(relx=0.5, rely=0.55, anchor=CENTER)
         self.meta_label.place(relx=0.5, rely=0.66, anchor=CENTER)
 
-    def load_state(self) -> OverlayState:
+    def load_state(self):
         if not self.state_path.exists():
             return OverlayState(message="No recognition state yet")
         try:
@@ -110,7 +114,7 @@ class NowPlayingOverlay:
             message=str(data.get("message") or ""),
         )
 
-    def update_labels(self) -> None:
+    def update_labels(self):
         state = self.load_state()
         if state.status == "recognized" and state.title:
             self.root.deiconify()
@@ -122,7 +126,7 @@ class NowPlayingOverlay:
             if state.album:
                 meta_parts.append(state.album)
             if state.score:
-                meta_parts.append(f"AcoustID score {state.score:.2f}")
+                meta_parts.append("AcoustID score %.2f" % state.score)
             self.meta_label.configure(text="  •  ".join(meta_parts))
         elif self.show_unrecognized:
             self.root.deiconify()
@@ -144,12 +148,12 @@ class NowPlayingOverlay:
             self.root.withdraw()
         self.root.after(self.poll_ms, self.update_labels)
 
-    def run(self) -> None:
+    def run(self):
         self.root.after(100, self.update_labels)
         self.root.mainloop()
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Fullscreen now-playing overlay")
     parser.add_argument("--state", default="", help="Override now-playing JSON state path")
     args = parser.parse_args(argv)
