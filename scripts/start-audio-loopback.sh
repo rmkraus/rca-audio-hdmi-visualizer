@@ -39,30 +39,37 @@ wait_for_audio() {
 pick_device() {
   local kind=$1
   local match=$2
-  local default_name list_cmd
+  local default_name="" list_cmd short_cmd
 
   if [[ "$kind" == "source" ]]; then
-    default_name=$(pactl_user get-default-source)
     list_cmd=(list sources)
+    short_cmd=(list short sources)
+    default_name=$(pactl_user get-default-source 2>/dev/null || true)
   else
-    default_name=$(pactl_user get-default-sink)
     list_cmd=(list sinks)
+    short_cmd=(list short sinks)
+    default_name=$(pactl_user get-default-sink 2>/dev/null || true)
   fi
 
-  if [[ -z "$match" ]]; then
+  if [[ -n "$match" ]]; then
+    pactl_user "${list_cmd[@]}" | awk -v pat="${match,,}" '
+      /^Source #|^Sink #/ { name=""; desc="" }
+      /^[[:space:]]*Name:/ { name=$2 }
+      /^[[:space:]]*Description:/ {
+        desc=substr($0, index($0, $2));
+        hay=tolower(name " " desc);
+        if (hay ~ pat && name != "") { print name; exit }
+      }
+    '
+    return 0
+  fi
+
+  if [[ -n "$default_name" ]]; then
     printf '%s\n' "$default_name"
     return 0
   fi
 
-  pactl_user "${list_cmd[@]}" | awk -v pat="${match,,}" '
-    /^Source #|^Sink #/ { name=""; desc="" }
-    /^[[:space:]]*Name:/ { name=$2 }
-    /^[[:space:]]*Description:/ {
-      desc=substr($0, index($0, $2));
-      hay=tolower(name " " desc);
-      if (hay ~ pat && name != "") { print name; exit }
-    }
-  '
+  pactl_user "${short_cmd[@]}" | awk 'NR == 1 { print $2; exit }'
 }
 
 cleanup_existing_loopbacks() {
