@@ -122,7 +122,7 @@ if ! command -v tailscale >/dev/null 2>&1; then
 fi
 systemctl enable --now tailscaled.service || systemctl enable --now tailscaled || true
 
-if ! flatpak remote-list --columns=name | grep -qx flathub; then
+if ! flatpak remotes 2>/dev/null | awk '{print $1}' | grep -qx flathub; then
   flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 fi
 
