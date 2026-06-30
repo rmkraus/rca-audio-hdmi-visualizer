@@ -19,12 +19,20 @@ uid=$(id -u "$VISUALIZER_USER")
 export XDG_RUNTIME_DIR="/run/user/$uid"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
 export DISPLAY=${DISPLAY:-:0}
+if [[ -z "${XAUTHORITY:-}" ]]; then
+  if [[ -f "$XDG_RUNTIME_DIR/gdm/Xauthority" ]]; then
+    export XAUTHORITY="$XDG_RUNTIME_DIR/gdm/Xauthority"
+  elif [[ -f "/home/$VISUALIZER_USER/.Xauthority" ]]; then
+    export XAUTHORITY="/home/$VISUALIZER_USER/.Xauthority"
+  fi
+fi
 
 run_as_user() {
   runuser -u "$VISUALIZER_USER" -- env \
     XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
     DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
     DISPLAY="$DISPLAY" \
+    XAUTHORITY="${XAUTHORITY:-}" \
     "$@"
 }
 
