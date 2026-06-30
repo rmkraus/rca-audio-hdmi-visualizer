@@ -21,6 +21,7 @@ This repository contains an installer and systemd units to make the box boot dir
 - unattended upgrade window set to 4:00 AM
 - optional Jetson Nano 10W/`jetson_clocks` performance service
 - optional now-playing recognition daemon using `fpcalc` and AcoustID
+- Tailscale installed and `tailscaled` enabled for manual login/configuration
 
 ## Target OS and hardware
 
@@ -51,6 +52,12 @@ Force a platform if auto-detection is wrong:
 sudo ./scripts/install.sh --platform jetson-nano
 sudo ./scripts/install.sh --platform raspberry-pi
 sudo ./scripts/install.sh --platform generic
+```
+
+Tailscale is installed by the installer, but it is not authenticated automatically. After install, log in manually on the node:
+
+```bash
+sudo tailscale up
 ```
 
 After reboot, the system should log in as the configured desktop user, start the graphical session, launch Cavasik full screen, and start audio loopback from the USB audio interface to HDMI.

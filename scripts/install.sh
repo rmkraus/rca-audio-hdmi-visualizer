@@ -97,6 +97,8 @@ APT_PACKAGES=(
   wmctrl
   xdotool
   pulseaudio-utils
+  curl
+  ca-certificates
   ffmpeg
   chromaprint-tools
   python3-tk
@@ -114,6 +116,11 @@ esac
 
 apt-get update
 apt-get install -y "${APT_PACKAGES[@]}"
+
+if ! command -v tailscale >/dev/null 2>&1; then
+  curl -fsSL https://tailscale.com/install.sh | sh
+fi
+systemctl enable --now tailscaled.service || systemctl enable --now tailscaled || true
 
 if ! flatpak remote-list --columns=name | grep -qx flathub; then
   flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
@@ -271,10 +278,11 @@ Desktop user: $DEFAULT_USER
 LightDM session: $SESSION_NAME
 
 Recommended next steps:
-  1. Add your AcoustID client key to /etc/rca-hdmi-visualizer.secrets
-  2. Enable recognition with RECOGNITION_ENABLED=true in $ENV_FILE
-  3. Reboot: sudo reboot
-  4. If audio routing is wrong, edit SOURCE_MATCH/SINK_MATCH in $ENV_FILE
-  5. Check services with: systemctl status rca-cavasik-kiosk rca-audio-loopback rca-now-playing rca-now-playing-overlay
-  6. Check Cavasik availability with: check-cavasik --run-test
+  1. Log into Tailscale manually: sudo tailscale up
+  2. Add your AcoustID client key to /etc/rca-hdmi-visualizer.secrets
+  3. Enable recognition with RECOGNITION_ENABLED=true in $ENV_FILE
+  4. Reboot: sudo reboot
+  5. If audio routing is wrong, edit SOURCE_MATCH/SINK_MATCH in $ENV_FILE
+  6. Check services with: systemctl status rca-cavasik-kiosk rca-audio-loopback rca-now-playing rca-now-playing-overlay
+  7. Check Cavasik availability with: check-cavasik --run-test
 EOF
