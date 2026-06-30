@@ -131,18 +131,25 @@ def record_sample(config, output_path, seconds):
     rate = config.int("RECOGNITION_SAMPLE_RATE", 44100)
     channels = config.int("RECOGNITION_CHANNELS", 2)
 
-    env_prefix = ""
+    parec_cmd = [
+        "parec",
+        "--device=%s" % source,
+        "--format=s16le",
+        "--rate=%s" % int(rate),
+        "--channels=%s" % int(channels),
+    ]
     if user:
-        env_prefix = " ".join(shlex.quote(part) for part in user_runtime_env_args(user)) + " "
+        # The recognizer service runs as root, but PulseAudio belongs to the
+        # desktop user. Run parec as that user; exporting XDG_RUNTIME_DIR alone
+        # as root connects to the wrong/denied PulseAudio context and records
+        # silence.
+        parec_cmd = ["runuser", "-u", user, "--"] + user_runtime_env_args(user) + parec_cmd
     cmd = (
-        "timeout %ss %sparec --device=%s --format=s16le --rate=%s --channels=%s | "
+        "timeout %ss %s | "
         "ffmpeg -hide_banner -loglevel error -y -f s16le -ar %s -ac %s -i pipe:0 %s"
         % (
             int(seconds),
-            env_prefix,
-            shlex.quote(source),
-            int(rate),
-            int(channels),
+            " ".join(shlex.quote(part) for part in parec_cmd),
             int(rate),
             int(channels),
             shlex.quote(str(output_path)),
