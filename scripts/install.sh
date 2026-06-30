@@ -104,6 +104,10 @@ APT_PACKAGES=(
   python3-tk
 )
 
+if [[ "$PLATFORM" == jetson-nano ]]; then
+  APT_PACKAGES+=(python3.8 python3.8-venv python3-pip)
+fi
+
 case "$PLATFORM" in
   raspberry-pi)
     APT_PACKAGES+=(xscreensaver)
@@ -156,7 +160,17 @@ install -m 0755 "$REPO_DIR/scripts/rca-now-playing" /usr/local/bin/rca-now-playi
 install -m 0755 "$REPO_DIR/scripts/rca-now-playing-overlay" /usr/local/bin/rca-now-playing-overlay
 install -m 0755 "$REPO_DIR/scripts/rca-simple-visualizer" /usr/local/bin/rca-simple-visualizer
 mkdir -p /opt/rca-hdmi-visualizer
+rm -rf /opt/rca-hdmi-visualizer/rca_visualizer
 cp -a "$REPO_DIR/rca_visualizer" /opt/rca-hdmi-visualizer/
+
+if [[ "$PLATFORM" == jetson-nano ]] && [[ -x /usr/bin/python3.8 ]]; then
+  if [[ ! -x /opt/rca-hdmi-visualizer/shazam-venv/bin/python ]]; then
+    python3.8 -m venv /opt/rca-hdmi-visualizer/shazam-venv
+    /opt/rca-hdmi-visualizer/shazam-venv/bin/python -m pip install --upgrade 'pip<24' setuptools wheel
+  fi
+  /opt/rca-hdmi-visualizer/shazam-venv/bin/pip install 'shazamio==0.6.0'
+fi
+
 install -m 0644 "$REPO_DIR/systemd/rca-cavasik-kiosk.service" /etc/systemd/system/rca-cavasik-kiosk.service
 install -m 0644 "$REPO_DIR/systemd/rca-audio-loopback.service" /etc/systemd/system/rca-audio-loopback.service
 install -m 0644 "$REPO_DIR/systemd/rca-now-playing.service" /etc/systemd/system/rca-now-playing.service

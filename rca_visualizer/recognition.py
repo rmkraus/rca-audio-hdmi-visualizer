@@ -15,6 +15,8 @@ from pathlib import Path
 from .config import RuntimeConfig
 
 ACOUSTID_LOOKUP_URL = "https://api.acoustid.org/v2/lookup"
+SHAZAM_LOOKUP_SCRIPT = "/opt/rca-hdmi-visualizer/rca_visualizer/shazam_lookup.py"
+SHAZAM_VENV_PYTHON = "/opt/rca-hdmi-visualizer/shazam-venv/bin/python"
 
 
 class RecognitionResult:
@@ -249,6 +251,27 @@ def write_state(path, result):
     os.replace(str(tmp), str(path))
 
 
+def identify_with_shazam(path):
+    if not Path(SHAZAM_VENV_PYTHON).exists() or not Path(SHAZAM_LOOKUP_SCRIPT).exists():
+        return RecognitionResult(
+            status="error",
+            provider="shazam",
+            recognized_at=now_iso(),
+            message="Shazam fallback is not installed",
+        )
+    result = run([SHAZAM_VENV_PYTHON, SHAZAM_LOOKUP_SCRIPT, str(path)], timeout=90)
+    if result.returncode != 0:
+        return RecognitionResult(
+            status="error",
+            provider="shazam",
+            recognized_at=now_iso(),
+            message=(result.stderr.strip() or result.stdout.strip() or "Shazam lookup failed"),
+        )
+    data = json.loads(result.stdout)
+    data["recognized_at"] = now_iso()
+    return RecognitionResult(**data)
+
+
 def identify_once(config):
     key = config.str("ACOUSTID_CLIENT_KEY")
     if not key:
@@ -274,7 +297,13 @@ def identify_once(config):
         result = best_result(data, min_score)
         values = result.to_dict()
         values["duration"] = int(fp_data["duration"])
-        return RecognitionResult(**values)
+        result = RecognitionResult(**values)
+        if result.status in {"no_match", "low_score"} and config.bool("SHAZAM_FALLBACK_ENABLED", False):
+            shazam_result = identify_with_shazam(sample)
+            if shazam_result.status == "recognized":
+                shazam_result.duration = int(fp_data["duration"])
+                return shazam_result
+        return result
 
 
 def daemon(config):
