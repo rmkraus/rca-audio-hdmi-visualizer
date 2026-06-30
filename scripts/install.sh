@@ -199,6 +199,29 @@ user-session=$SESSION_NAME
 xserver-command=X -s 0 -dpms
 LIGHTDM
 
+cat >/usr/local/bin/disable-display-sleep <<'DISPLAY_SLEEP'
+#!/usr/bin/env bash
+set -euo pipefail
+xset s off || true
+xset s noblank || true
+xset -dpms || true
+DISPLAY_SLEEP
+chmod +x /usr/local/bin/disable-display-sleep
+
+mkdir -p /etc/X11/xorg.conf.d
+cat >/etc/X11/xorg.conf.d/10-disable-blanking.conf <<'XORG_BLANKING'
+Section "ServerFlags"
+    Option "BlankTime" "0"
+    Option "StandbyTime" "0"
+    Option "SuspendTime" "0"
+    Option "OffTime" "0"
+EndSection
+
+Section "Extensions"
+    Option "DPMS" "Disable"
+EndSection
+XORG_BLANKING
+
 USER_HOME=$(getent passwd "$DEFAULT_USER" | cut -d: -f6)
 if [[ "$PLATFORM" == raspberry-pi ]]; then
   mkdir -p "$USER_HOME/.config/lxsession/LXDE-pi"
@@ -206,9 +229,7 @@ if [[ "$PLATFORM" == raspberry-pi ]]; then
 @lxpanel --profile LXDE-pi
 @pcmanfm --desktop --profile LXDE-pi
 @xscreensaver -no-splash
-@xset s off
-@xset -dpms
-@xset s noblank
+@/usr/local/bin/disable-display-sleep
 AUTOSTART
   chown -R "$DEFAULT_USER:$DEFAULT_USER" "$USER_HOME/.config/lxsession"
 else
@@ -217,10 +238,30 @@ else
 [Desktop Entry]
 Type=Application
 Name=Disable display blanking
-Exec=sh -c 'xset s off; xset -dpms; xset s noblank'
+Exec=/usr/local/bin/disable-display-sleep
 X-GNOME-Autostart-enabled=true
+NoDisplay=true
 AUTOSTART
   chown -R "$DEFAULT_USER:$DEFAULT_USER" "$USER_HOME/.config/autostart"
+fi
+
+if command -v gsettings >/dev/null 2>&1; then
+  user_uid=$(id -u "$DEFAULT_USER")
+  gsettings_as_user() {
+    runuser -u "$DEFAULT_USER" -- env \
+      DISPLAY=:0 \
+      XDG_RUNTIME_DIR="/run/user/$user_uid" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$user_uid/bus" \
+      gsettings "$@" || true
+  }
+  gsettings_as_user set org.gnome.desktop.session idle-delay 0
+  gsettings_as_user set org.gnome.desktop.screensaver lock-enabled false
+  gsettings_as_user set org.gnome.desktop.screensaver idle-activation-enabled false
+  gsettings_as_user set org.gnome.desktop.screensaver ubuntu-lock-on-suspend false
+  gsettings_as_user set org.gnome.settings-daemon.plugins.power idle-dim false
+  gsettings_as_user set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-timeout 0
+  gsettings_as_user set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type nothing
+  gsettings_as_user set org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type nothing
 fi
 
 loginctl enable-linger "$DEFAULT_USER" || true

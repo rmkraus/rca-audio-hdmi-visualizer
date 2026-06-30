@@ -1,47 +1,56 @@
 #!/usr/bin/env python3
 import math
 import os
+import pwd
 import struct
 import subprocess
+import time
 from tkinter import BOTH, Canvas, Tk
 
 
 def env_file(path):
     vals = {}
     try:
-        for raw in open(path):
-            line = raw.strip()
-            if not line or line.startswith('#') or '=' not in line:
-                continue
-            k, v = line.split('=', 1)
-            vals[k.strip()] = v.strip().strip('"').strip("'")
+        with open(path) as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                k, v = line.split('=', 1)
+                vals[k.strip()] = v.strip().strip('"').strip("'")
     except IOError:
         pass
     vals.update(os.environ)
     return vals
 
 
-def runtime_env(user):
-    if not user:
-        return []
+def user_runtime(user):
     uid = subprocess.check_output(['id', '-u', user]).decode().strip()
-    return [
-        'env',
-        'XDG_RUNTIME_DIR=/run/user/%s' % uid,
-        'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus' % uid,
-    ]
+    return {
+        'XDG_RUNTIME_DIR': '/run/user/%s' % uid,
+        'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/%s/bus' % uid,
+    }
+
+
+def current_username():
+    try:
+        return pwd.getpwuid(os.geteuid()).pw_name
+    except Exception:
+        return ''
 
 
 class Visualizer:
     def __init__(self):
         self.cfg = env_file('/etc/rca-hdmi-visualizer.env')
         self.user = self.cfg.get('VISUALIZER_USER', '')
-        self.source = self.cfg.get('RECOGNITION_SOURCE') or ''
+        self.source = self.cfg.get('RECOGNITION_SOURCE') or self.cfg.get('SOURCE_MATCH') or ''
         self.rate = int(self.cfg.get('RECOGNITION_SAMPLE_RATE', '44100') or '44100')
         self.channels = int(self.cfg.get('RECOGNITION_CHANNELS', '1') or '1')
         self.chunk_frames = 2048
-        self.bars = [0.0] * 48
+        self.bars = [0.03] * 48
         self.proc = None
+        self.last_error = ''
+        self.started_at = time.time()
 
         self.root = Tk()
         self.root.title('RCA Audio Visualizer')
@@ -54,15 +63,34 @@ class Visualizer:
         self.start_capture()
 
     def start_capture(self):
+        if self.proc and self.proc.poll() is None:
+            return
         cmd = ['parec', '--format=s16le', '--rate=%d' % self.rate, '--channels=%d' % self.channels]
         if self.source:
             cmd.insert(1, '--device=%s' % self.source)
+
+        env = os.environ.copy()
         if self.user:
-            cmd = ['runuser', '-u', self.user, '--'] + runtime_env(self.user) + cmd
-        self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            env.update(user_runtime(self.user))
+
+        if self.user and current_username() != self.user:
+            run_env = ['env'] + ['%s=%s' % (k, v) for k, v in user_runtime(self.user).items()]
+            cmd = ['runuser', '-u', self.user, '--'] + run_env + cmd
+
+        try:
+            self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+            self.last_error = ''
+        except Exception as exc:
+            self.proc = None
+            self.last_error = str(exc)
 
     def next_level(self):
         if not self.proc or self.proc.poll() is not None:
+            if self.proc and self.proc.stderr:
+                try:
+                    self.last_error = self.proc.stderr.read().decode('utf-8', 'replace')[-160:]
+                except Exception:
+                    pass
             self.start_capture()
             return 0.0
         wanted = self.chunk_frames * self.channels * 2
@@ -72,12 +100,14 @@ class Visualizer:
         count = len(data) // 2
         samples = struct.unpack('<%dh' % count, data[:count * 2])
         avg = sum(abs(x) for x in samples) / float(max(count, 1))
-        return min(1.0, avg / 5000.0)
+        # iRig/vinyl levels on musicman can be quiet. Scale aggressively so
+        # quiet-but-real audio is visible instead of looking like a black panel.
+        return min(1.0, avg / 350.0)
 
     def tick(self):
         level = self.next_level()
         self.bars.pop(0)
-        self.bars.append(level)
+        self.bars.append(max(0.025, level))
         self.draw(level)
         self.root.after(33, self.tick)
 
@@ -90,17 +120,26 @@ class Visualizer:
         bar_w = max(4, (w - gap * (n + 1)) // n)
         baseline = int(h * 0.78)
         max_h = int(h * 0.58)
+
+        # Subtle non-black background grid so an idle input still shows life.
+        for y in range(int(h * 0.18), int(h * 0.86), max(28, h // 18)):
+            self.canvas.create_line(0, y, w, y, fill='#020b08')
+
         for i, val in enumerate(self.bars):
             shaped = math.sqrt(max(0.0, val))
-            bh = int(max_h * shaped)
+            bh = max(4, int(max_h * shaped))
             x0 = gap + i * (bar_w + gap)
             x1 = x0 + bar_w
             y0 = baseline - bh
-            color = '#%02x%02x%02x' % (40 + int(80 * shaped), 180 + int(60 * shaped), 120)
+            color = '#%02x%02x%02x' % (40 + int(80 * shaped), 120 + int(120 * shaped), 95 + int(80 * shaped))
             self.canvas.create_rectangle(x0, y0, x1, baseline, fill=color, outline='')
             self.canvas.create_rectangle(x0, baseline, x1, baseline + bh // 3, fill='#103020', outline='')
-        self.canvas.create_text(w // 2, int(h * 0.10), text='musicman', fill='#333333', font=('DejaVu Sans', 24))
-        self.canvas.create_text(w // 2, int(h * 0.88), text='input %d%%' % int(level * 100), fill='#444444', font=('DejaVu Sans', 18))
+
+        self.canvas.create_text(w // 2, int(h * 0.10), text='musicman', fill='#606060', font=('DejaVu Sans', 24))
+        label = 'input %d%%' % int(level * 100)
+        if self.last_error:
+            label += '  capture: %s' % self.last_error.strip().replace('\n', ' ')
+        self.canvas.create_text(w // 2, int(h * 0.88), text=label, fill='#707070', font=('DejaVu Sans', 18))
 
     def run(self):
         self.root.after(100, self.tick)
