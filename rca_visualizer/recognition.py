@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import shlex
 import time
 import urllib.parse
 import urllib.request
@@ -127,51 +128,35 @@ def record_sample(config, output_path, seconds):
     source = config.str("RECOGNITION_SOURCE", "") or get_audio_device(
         "source", config.str("SOURCE_MATCH", "usb"), user
     )
-    user_prefix = [] if not user else ["runuser", "-u", user, "--"] + user_runtime_env_args(user)
     rate = config.int("RECOGNITION_SAMPLE_RATE", 44100)
     channels = config.int("RECOGNITION_CHANNELS", 2)
 
-    parec_cmd = [
-        "timeout",
-        "%ss" % int(seconds),
-    ] + user_prefix + [
-        "parec",
-        "--device=%s" % source,
-        "--format=s16le",
-        "--rate=%s" % int(rate),
-        "--channels=%s" % int(channels),
-    ]
-    ffmpeg_cmd = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-f",
-        "s16le",
-        "-ar",
-        str(int(rate)),
-        "-ac",
-        str(int(channels)),
-        "-i",
-        "pipe:0",
-        str(output_path),
-    ]
-    parec = subprocess.Popen(parec_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    ffmpeg = subprocess.run(
-        ffmpeg_cmd,
-        stdin=parec.stdout,
+    env_prefix = ""
+    if user:
+        env_prefix = " ".join(shlex.quote(part) for part in user_runtime_env_args(user)) + " "
+    cmd = (
+        "timeout %ss %sparec --device=%s --format=s16le --rate=%s --channels=%s | "
+        "ffmpeg -hide_banner -loglevel error -y -f s16le -ar %s -ac %s -i pipe:0 %s"
+        % (
+            int(seconds),
+            env_prefix,
+            shlex.quote(source),
+            int(rate),
+            int(channels),
+            int(rate),
+            int(channels),
+            shlex.quote(str(output_path)),
+        )
+    )
+    result = subprocess.run(
+        ["bash", "-lc", cmd],
+        universal_newlines=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
     )
-    if parec.stdout is not None:
-        parec.stdout.close()
-    _stdout, parec_stderr = parec.communicate(timeout=max(int(seconds) + 5, 10))
-    if ffmpeg.returncode != 0:
-        raise RuntimeError(ffmpeg.stderr.decode(errors="replace").strip() or "ffmpeg sample conversion failed")
-    if parec.returncode not in {0, 124}:
-        raise RuntimeError(parec_stderr.decode(errors="replace").strip() or "parec audio capture failed")
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "audio sample recording failed")
     if not output_path.exists() or output_path.stat().st_size == 0:
         raise RuntimeError("audio sample was empty")
     return output_path

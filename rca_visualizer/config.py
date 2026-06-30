@@ -10,7 +10,11 @@ def parse_env_file(path):
     values = {}
     if not path.exists():
         return values
-    for raw_line in path.read_text().splitlines():
+    try:
+        lines = path.read_text().splitlines()
+    except (IOError, OSError):
+        return values
+    for raw_line in lines:
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
