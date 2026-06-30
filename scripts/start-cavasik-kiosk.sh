@@ -9,6 +9,9 @@ fi
 
 VISUALIZER_USER=${VISUALIZER_USER:-pi}
 CAVASIK_APP_ID=${CAVASIK_APP_ID:-io.github.TheWisker.Cavasik}
+# Optional full command override, e.g. VISUALIZER_COMMAND="xterm -fullscreen -e cava".
+# When empty, the launcher runs Cavasik via Flatpak.
+VISUALIZER_COMMAND=${VISUALIZER_COMMAND:-}
 WINDOW_MATCH=${WINDOW_MATCH:-Cavasik}
 STARTUP_TIMEOUT=${STARTUP_TIMEOUT:-60}
 
@@ -58,7 +61,11 @@ fullscreen_window() {
 
 wait_for_session
 
-run_as_user flatpak run "$CAVASIK_APP_ID" &
+if [[ -n "$VISUALIZER_COMMAND" ]]; then
+  run_as_user bash -lc "$VISUALIZER_COMMAND" &
+else
+  run_as_user flatpak run "$CAVASIK_APP_ID" &
+fi
 app_pid=$!
 
 fullscreen_window &

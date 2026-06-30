@@ -1,0 +1,12 @@
+[Unit]
+Description=Jetson Nano 10W performance mode for RCA HDMI visualizer
+ConditionPathExists=/etc/nv_tegra_release
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'command -v nvpmodel >/dev/null 2>&1 && nvpmodel -m 0 || true; command -v jetson_clocks >/dev/null 2>&1 && jetson_clocks || true'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
