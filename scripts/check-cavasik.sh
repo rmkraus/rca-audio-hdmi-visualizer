@@ -50,7 +50,7 @@ if flatpak info "$APP_ID" >/dev/null 2>&1; then
   echo "Cavasik is already installed: $APP_ID"
 else
   echo "Checking Flathub availability for $APP_ID ..."
-  if ! flatpak remote-ls --app flathub "$APP_ID" >/dev/null 2>&1; then
+  if ! flatpak remote-ls --app --columns=application flathub 2>/dev/null | grep -qx "$APP_ID"; then
     echo "Cavasik was not found on Flathub for this Flatpak/architecture combination." >&2
     echo "On Jetson Nano, this usually means the old JetPack/Ubuntu Flatpak stack needs updating or Cavasik needs an alternate install path." >&2
     exit 1
