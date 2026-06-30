@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+import math
+import os
+import struct
+import subprocess
+from tkinter import BOTH, Canvas, Tk
+
+
+def env_file(path):
+    vals = {}
+    try:
+        for raw in open(path):
+            line = raw.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            k, v = line.split('=', 1)
+            vals[k.strip()] = v.strip().strip('"').strip("'")
+    except IOError:
+        pass
+    vals.update(os.environ)
+    return vals
+
+
+def runtime_env(user):
+    if not user:
+        return []
+    uid = subprocess.check_output(['id', '-u', user]).decode().strip()
+    return [
+        'env',
+        'XDG_RUNTIME_DIR=/run/user/%s' % uid,
+        'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus' % uid,
+    ]
+
+
+class Visualizer:
+    def __init__(self):
+        self.cfg = env_file('/etc/rca-hdmi-visualizer.env')
+        self.user = self.cfg.get('VISUALIZER_USER', '')
+        self.source = self.cfg.get('RECOGNITION_SOURCE') or ''
+        self.rate = int(self.cfg.get('RECOGNITION_SAMPLE_RATE', '44100') or '44100')
+        self.channels = int(self.cfg.get('RECOGNITION_CHANNELS', '1') or '1')
+        self.chunk_frames = 2048
+        self.bars = [0.0] * 48
+        self.proc = None
+
+        self.root = Tk()
+        self.root.title('RCA Audio Visualizer')
+        self.root.configure(bg='black')
+        self.root.attributes('-fullscreen', True)
+        self.root.bind('<Escape>', lambda _e: self.root.destroy())
+        self.root.bind('q', lambda _e: self.root.destroy())
+        self.canvas = Canvas(self.root, bg='black', highlightthickness=0)
+        self.canvas.pack(fill=BOTH, expand=True)
+        self.start_capture()
+
+    def start_capture(self):
+        cmd = ['parec', '--format=s16le', '--rate=%d' % self.rate, '--channels=%d' % self.channels]
+        if self.source:
+            cmd.insert(1, '--device=%s' % self.source)
+        if self.user:
+            cmd = ['runuser', '-u', self.user, '--'] + runtime_env(self.user) + cmd
+        self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+    def next_level(self):
+        if not self.proc or self.proc.poll() is not None:
+            self.start_capture()
+            return 0.0
+        wanted = self.chunk_frames * self.channels * 2
+        data = self.proc.stdout.read(wanted)
+        if not data:
+            return 0.0
+        count = len(data) // 2
+        samples = struct.unpack('<%dh' % count, data[:count * 2])
+        avg = sum(abs(x) for x in samples) / float(max(count, 1))
+        return min(1.0, avg / 5000.0)
+
+    def tick(self):
+        level = self.next_level()
+        self.bars.pop(0)
+        self.bars.append(level)
+        self.draw(level)
+        self.root.after(33, self.tick)
+
+    def draw(self, level):
+        w = max(self.canvas.winfo_width(), 1)
+        h = max(self.canvas.winfo_height(), 1)
+        self.canvas.delete('all')
+        n = len(self.bars)
+        gap = 6
+        bar_w = max(4, (w - gap * (n + 1)) // n)
+        baseline = int(h * 0.78)
+        max_h = int(h * 0.58)
+        for i, val in enumerate(self.bars):
+            shaped = math.sqrt(max(0.0, val))
+            bh = int(max_h * shaped)
+            x0 = gap + i * (bar_w + gap)
+            x1 = x0 + bar_w
+            y0 = baseline - bh
+            color = '#%02x%02x%02x' % (40 + int(80 * shaped), 180 + int(60 * shaped), 120)
+            self.canvas.create_rectangle(x0, y0, x1, baseline, fill=color, outline='')
+            self.canvas.create_rectangle(x0, baseline, x1, baseline + bh // 3, fill='#103020', outline='')
+        self.canvas.create_text(w // 2, int(h * 0.10), text='musicman', fill='#333333', font=('DejaVu Sans', 24))
+        self.canvas.create_text(w // 2, int(h * 0.88), text='input %d%%' % int(level * 100), fill='#444444', font=('DejaVu Sans', 18))
+
+    def run(self):
+        self.root.after(100, self.tick)
+        self.root.mainloop()
+
+
+if __name__ == '__main__':
+    Visualizer().run()

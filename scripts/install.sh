@@ -154,6 +154,7 @@ install -m 0755 "$REPO_DIR/scripts/start-now-playing-overlay.sh" /usr/local/bin/
 install -m 0755 "$REPO_DIR/scripts/check-cavasik.sh" /usr/local/bin/check-cavasik
 install -m 0755 "$REPO_DIR/scripts/rca-now-playing" /usr/local/bin/rca-now-playing
 install -m 0755 "$REPO_DIR/scripts/rca-now-playing-overlay" /usr/local/bin/rca-now-playing-overlay
+install -m 0755 "$REPO_DIR/scripts/rca-simple-visualizer" /usr/local/bin/rca-simple-visualizer
 mkdir -p /opt/rca-hdmi-visualizer
 cp -a "$REPO_DIR/rca_visualizer" /opt/rca-hdmi-visualizer/
 install -m 0644 "$REPO_DIR/systemd/rca-cavasik-kiosk.service" /etc/systemd/system/rca-cavasik-kiosk.service
