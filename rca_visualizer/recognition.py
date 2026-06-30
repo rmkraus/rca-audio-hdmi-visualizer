@@ -240,7 +240,7 @@ def identify_once(config):
 def daemon(config):
     state_path = Path(config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json"))
     interval = config.int("RECOGNITION_INTERVAL_SECONDS", 180)
-    cooldown = config.int("RECOGNITION_COOLDOWN_SECONDS", 600)
+    cooldown = config.int("RECOGNITION_COOLDOWN_SECONDS", 30)
     keep_last_on_miss = config.bool("RECOGNITION_KEEP_LAST_ON_MISS", True)
     enabled = config.bool("RECOGNITION_ENABLED", False)
     last_track_key = ""
