@@ -1,0 +1,14 @@
+[Unit]
+Description=RCA to HDMI Cavasik kiosk
+After=display-manager.service systemd-user-sessions.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/rca-hdmi-visualizer.env
+ExecStart=/usr/local/bin/start-cavasik-kiosk
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

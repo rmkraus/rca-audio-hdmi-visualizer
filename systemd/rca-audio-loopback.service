@@ -1,0 +1,14 @@
+[Unit]
+Description=RCA USB capture to HDMI audio loopback
+After=display-manager.service systemd-user-sessions.service sound.target pipewire-pulse.service pulseaudio.service
+Wants=sound.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/rca-hdmi-visualizer.env
+ExecStart=/usr/local/bin/start-audio-loopback
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target
