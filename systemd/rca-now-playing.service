@@ -1,0 +1,15 @@
+[Unit]
+Description=AcoustID now-playing recognition daemon
+After=rca-audio-loopback.service network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/rca-hdmi-visualizer.env
+EnvironmentFile=-/etc/rca-hdmi-visualizer.secrets
+ExecStart=/usr/local/bin/rca-now-playing daemon
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=graphical.target

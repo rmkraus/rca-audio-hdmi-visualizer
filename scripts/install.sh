@@ -97,6 +97,9 @@ APT_PACKAGES=(
   wmctrl
   xdotool
   pulseaudio-utils
+  ffmpeg
+  chromaprint-tools
+  python3-tk
 )
 
 case "$PLATFORM" in
@@ -140,9 +143,16 @@ fi
 
 install -m 0755 "$REPO_DIR/scripts/start-cavasik-kiosk.sh" /usr/local/bin/start-cavasik-kiosk
 install -m 0755 "$REPO_DIR/scripts/start-audio-loopback.sh" /usr/local/bin/start-audio-loopback
+install -m 0755 "$REPO_DIR/scripts/start-now-playing-overlay.sh" /usr/local/bin/start-now-playing-overlay
 install -m 0755 "$REPO_DIR/scripts/check-cavasik.sh" /usr/local/bin/check-cavasik
+install -m 0755 "$REPO_DIR/scripts/rca-now-playing" /usr/local/bin/rca-now-playing
+install -m 0755 "$REPO_DIR/scripts/rca-now-playing-overlay" /usr/local/bin/rca-now-playing-overlay
+mkdir -p /opt/rca-hdmi-visualizer
+cp -a "$REPO_DIR/rca_visualizer" /opt/rca-hdmi-visualizer/
 install -m 0644 "$REPO_DIR/systemd/rca-cavasik-kiosk.service" /etc/systemd/system/rca-cavasik-kiosk.service
 install -m 0644 "$REPO_DIR/systemd/rca-audio-loopback.service" /etc/systemd/system/rca-audio-loopback.service
+install -m 0644 "$REPO_DIR/systemd/rca-now-playing.service" /etc/systemd/system/rca-now-playing.service
+install -m 0644 "$REPO_DIR/systemd/rca-now-playing-overlay.service" /etc/systemd/system/rca-now-playing-overlay.service
 
 if [[ "$PLATFORM" == jetson-nano ]]; then
   install -m 0644 "$REPO_DIR/systemd/jetson-performance.service" /etc/systemd/system/jetson-performance.service
@@ -153,6 +163,14 @@ if [[ ! -f "$ENV_FILE" ]]; then
   sed -i "s/^VISUALIZER_USER=.*/VISUALIZER_USER=$DEFAULT_USER/" "$ENV_FILE"
   sed -i "s/^PLATFORM=.*/PLATFORM=$PLATFORM/" "$ENV_FILE"
 fi
+
+SECRETS_FILE=/etc/rca-hdmi-visualizer.secrets
+if [[ ! -f "$SECRETS_FILE" ]]; then
+  install -m 0600 "$REPO_DIR/config/rca-hdmi-visualizer.secrets.example" "$SECRETS_FILE"
+fi
+
+mkdir -p /var/lib/rca-hdmi-visualizer
+chown "$DEFAULT_USER:$DEFAULT_USER" /var/lib/rca-hdmi-visualizer
 
 mkdir -p /etc/lightdm/lightdm.conf.d
 SESSION_NAME=LXDE-pi
@@ -239,7 +257,7 @@ APT_UPGRADE_TIMER
 systemctl daemon-reload
 systemctl enable lightdm.service || true
 systemctl enable apt-daily.timer apt-daily-upgrade.timer
-systemctl enable rca-cavasik-kiosk.service rca-audio-loopback.service
+systemctl enable rca-cavasik-kiosk.service rca-audio-loopback.service rca-now-playing.service rca-now-playing-overlay.service
 if [[ "$PLATFORM" == jetson-nano ]]; then
   systemctl enable jetson-performance.service
 fi
@@ -253,8 +271,10 @@ Desktop user: $DEFAULT_USER
 LightDM session: $SESSION_NAME
 
 Recommended next steps:
-  1. Reboot: sudo reboot
-  2. If audio routing is wrong, edit SOURCE_MATCH/SINK_MATCH in $ENV_FILE
-  3. Check services with: systemctl status rca-cavasik-kiosk rca-audio-loopback
-  4. Check Cavasik availability with: check-cavasik --run-test
+  1. Add your AcoustID client key to /etc/rca-hdmi-visualizer.secrets
+  2. Enable recognition with RECOGNITION_ENABLED=true in $ENV_FILE
+  3. Reboot: sudo reboot
+  4. If audio routing is wrong, edit SOURCE_MATCH/SINK_MATCH in $ENV_FILE
+  5. Check services with: systemctl status rca-cavasik-kiosk rca-audio-loopback rca-now-playing rca-now-playing-overlay
+  6. Check Cavasik availability with: check-cavasik --run-test
 EOF

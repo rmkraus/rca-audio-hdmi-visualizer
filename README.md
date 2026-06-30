@@ -9,6 +9,8 @@ The intended hardware path is:
 - Raspberry Pi or Jetson Nano HDMI output to a TV/projector/capture chain
 - Full-screen [Cavasik](https://github.com/TheWisker/Cavasik) audio visualizer
 - Live audio monitor from USB capture input to HDMI audio output
+- AcoustID/Chromaprint now-playing recognition for the vinyl feed
+- Fullscreen now-playing overlay displayed above the visualization
 
 This repository contains an installer and systemd units to make the box boot directly into the visualizer experience:
 
@@ -18,6 +20,7 @@ This repository contains an installer and systemd units to make the box boot dir
 - unattended security upgrades enabled
 - unattended upgrade window set to 4:00 AM
 - optional Jetson Nano 10W/`jetson_clocks` performance service
+- optional now-playing recognition daemon using `fpcalc` and AcoustID
 
 ## Target OS and hardware
 
@@ -86,6 +89,25 @@ If Cavasik is not available from Flathub on the Nano, options are:
 - install with `--skip-cavasik` and replace the visualizer command later
 - use a different visualizer, such as terminal `cava` in a fullscreen terminal, as a fallback
 
+## Now playing recognition
+
+Recognition is disabled by default. To use it, register a non-commercial AcoustID application, put the client key in `/etc/rca-hdmi-visualizer.secrets`, and enable `RECOGNITION_ENABLED=true` in `/etc/rca-hdmi-visualizer.env`.
+
+```bash
+sudo nano /etc/rca-hdmi-visualizer.secrets
+sudo nano /etc/rca-hdmi-visualizer.env
+sudo systemctl restart rca-now-playing.service rca-now-playing-overlay.service
+```
+
+One-shot test:
+
+```bash
+sudo rca-now-playing identify-once
+jq . /var/lib/rca-hdmi-visualizer/now-playing.json
+```
+
+The default vinyl-oriented sample length is 45 seconds. See `docs/now-playing.md` for tuning sample length, score threshold, silence detection, and overlay opacity.
+
 ## Hardware notes
 
 - Use a USB audio interface with stereo line input. Many cheap dongles expose mic input only; those can clip or sum the signal incorrectly.
@@ -106,6 +128,10 @@ Useful settings:
 - `LOOPBACK_LATENCY_MSEC`: requested PipeWire/PulseAudio loopback latency.
 - `CAVASIK_APP_ID`: Flatpak app ID, normally `io.github.TheWisker.Cavasik`.
 - `VISUALIZER_COMMAND`: optional command override if you need to launch a non-Flatpak build of Cavasik or a fallback visualizer.
+- `RECOGNITION_ENABLED`: enables/disables AcoustID recognition.
+- `RECOGNITION_SAMPLE_SECONDS`: sample length sent to Chromaprint/AcoustID; 45-60 seconds is a good vinyl starting point.
+- `RECOGNITION_MIN_SCORE`: minimum AcoustID score required before the overlay updates.
+- `OVERLAY_ALPHA`: fullscreen overlay opacity.
 
 To inspect audio device names after install:
 
@@ -127,6 +153,8 @@ System services installed by this repo:
 
 - `rca-cavasik-kiosk.service`: waits for the desktop session and launches Cavasik under the configured user.
 - `rca-audio-loopback.service`: creates an audio loopback from the selected USB capture source to HDMI output.
+- `rca-now-playing.service`: records samples, fingerprints them with Chromaprint, and queries AcoustID.
+- `rca-now-playing-overlay.service`: shows recognized now-playing metadata in a fullscreen always-on-top overlay.
 - `jetson-performance.service`: Jetson Nano only; enables 10W mode and max clocks.
 
 Useful commands:
@@ -134,9 +162,12 @@ Useful commands:
 ```bash
 systemctl status rca-cavasik-kiosk.service
 systemctl status rca-audio-loopback.service
+systemctl status rca-now-playing.service
+systemctl status rca-now-playing-overlay.service
 systemctl status jetson-performance.service
 journalctl -u rca-cavasik-kiosk.service -f
 journalctl -u rca-audio-loopback.service -f
+journalctl -u rca-now-playing.service -f
 ```
 
 ## Updates
@@ -160,3 +191,4 @@ systemctl list-timers 'apt-daily*'
 - The kiosk launcher uses `wmctrl` and `xdotool` to make the Cavasik window full screen. If Cavasik changes its window title/class, adjust `WINDOW_MATCH` in `/etc/rca-hdmi-visualizer.env`.
 - This setup expects X11 because the fullscreen helper uses X11 window-management tools.
 - Flatpak apps can sometimes need first-run configuration. Launch Cavasik manually once if you want to customize colors/modes before making the box appliance-like.
+- Recognition sends Chromaprint fingerprints/durations to AcoustID when `RECOGNITION_ENABLED=true`; raw audio is not uploaded by this code.
