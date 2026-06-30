@@ -52,7 +52,8 @@ pick_device() {
   fi
 
   if [[ -n "$match" ]]; then
-    pactl_user "${list_cmd[@]}" | awk -v pat="${match,,}" '
+    local matched_name
+    matched_name=$(pactl_user "${list_cmd[@]}" | awk -v pat="${match,,}" '
       /^Source #|^Sink #/ { name=""; desc="" }
       /^[[:space:]]*Name:/ { name=$2 }
       /^[[:space:]]*Description:/ {
@@ -60,8 +61,18 @@ pick_device() {
         hay=tolower(name " " desc);
         if (hay ~ pat && name != "") { print name; exit }
       }
-    '
-    return 0
+    ')
+    if [[ -n "$matched_name" ]]; then
+      printf '%s
+' "$matched_name"
+      return 0
+    fi
+    matched_name=$(pactl_user "${short_cmd[@]}" | awk -v pat="${match,,}" 'tolower($0) ~ pat { print $2; exit }')
+    if [[ -n "$matched_name" ]]; then
+      printf '%s
+' "$matched_name"
+      return 0
+    fi
   fi
 
   if [[ -n "$default_name" ]]; then
