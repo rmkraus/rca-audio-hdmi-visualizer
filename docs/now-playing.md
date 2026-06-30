@@ -1,139 +1,30 @@
-# Now Playing Recognition
+# Now-playing recognition
 
-This appliance can identify records from the same USB audio capture source used by the visualizer. The first implementation uses Chromaprint/`fpcalc` locally and the free non-commercial AcoustID lookup API.
+The appliance can identify records from the same USB audio capture source used by
+the visualizer. Recognition is designed for live vinyl snippets and uses a
+Shazam-style recognizer from a short local WAV sample.
 
-## Signal path
+Raw audio is recorded locally under a temporary directory and sent only to the
+recognition client for the lookup. The persistent state written for the overlay
+is `/var/lib/rca-hdmi-visualizer/now-playing.json`.
+
+## Data flow
 
 ```text
-RCA vinyl playback
-  -> USB audio interface
-     -> audio loopback to HDMI
-     -> Cavasik visualizer
-     -> rca-now-playing daemon
-          -> record 45s WAV sample
-          -> fpcalc Chromaprint fingerprint
-          -> AcoustID lookup
-          -> /var/lib/rca-hdmi-visualizer/now-playing.json
-     -> fullscreen overlay window above Cavasik
+USB audio source
+  -> short WAV sample
+  -> Shazam-style snippet lookup
+  -> /var/lib/rca-hdmi-visualizer/now-playing.json
+  -> fullscreen overlay
 ```
-
-## Why AcoustID should be plausible for vinyl here
-
-Chromaprint is less phone-across-the-room/Shazam-like than ACRCloud, but this box has a clean line-level path: good vinyl source, RCA into USB interface, and no microphone room noise. That makes longer samples practical.
-
-Start with:
-
-```env
-RECOGNITION_SAMPLE_SECONDS=45
-RECOGNITION_MIN_SCORE=0.80
-```
-
-If matches are inconsistent, try:
-
-```env
-RECOGNITION_SAMPLE_SECONDS=60
-RECOGNITION_MIN_SCORE=0.70
-```
-
-If false positives happen, raise `RECOGNITION_MIN_SCORE` toward `0.90`.
 
 ## Enable recognition
 
-Register a non-commercial AcoustID app and get a client key:
-
-https://acoustid.org/new-application
-
-Put the key in the root-only secrets file:
-
-```bash
-sudo nano /etc/rca-hdmi-visualizer.secrets
-```
-
-```env
-ACOUSTID_CLIENT_KEY=your_client_key_here
-```
-
-Enable recognition:
+Edit the appliance config:
 
 ```bash
 sudo nano /etc/rca-hdmi-visualizer.env
 ```
-
-```env
-RECOGNITION_ENABLED=true
-```
-
-Restart services:
-
-```bash
-sudo systemctl restart rca-now-playing.service rca-now-playing-overlay.service
-```
-
-## One-shot test
-
-From the appliance:
-
-```bash
-sudo rca-now-playing identify-once
-```
-
-It records one sample, fingerprints it, queries AcoustID, writes the state JSON, and prints the result.
-
-Inspect current state:
-
-```bash
-jq . /var/lib/rca-hdmi-visualizer/now-playing.json
-```
-
-## Daemon behavior
-
-`rca-now-playing.service` loops forever:
-
-1. records `RECOGNITION_SAMPLE_SECONDS` from the configured capture source
-2. skips lookup if RMS is below `RECOGNITION_MIN_RMS`
-3. runs `fpcalc`
-4. sends duration/fingerprint to AcoustID
-5. writes `NOW_PLAYING_STATE` when a track is recognized
-6. sleeps `RECOGNITION_INTERVAL_SECONDS`, or `RECOGNITION_COOLDOWN_SECONDS` after confirming the same song
-
-By default `RECOGNITION_KEEP_LAST_ON_MISS=true`, so a temporary low-score/no-match sample does not clear the current overlay while a record side is still playing.
-
-The default request rate is very low: roughly one lookup every 30-75 seconds while audio is present.
-
-## Overlay behavior
-
-`rca-now-playing-overlay.service` runs a fullscreen Tk window above Cavasik. It is hidden until a recognized track is available by default. Set this for debugging:
-
-```env
-OVERLAY_SHOW_UNRECOGNIZED=true
-```
-
-The overlay is slightly transparent by default:
-
-```env
-OVERLAY_ALPHA=0.78
-```
-
-Lower values show more of the visualization behind the text. Higher values make metadata more readable.
-
-## Audio source selection
-
-By default the recognizer uses `SOURCE_MATCH`, the same matching rule as the audio loopback. You can override it:
-
-```env
-RECOGNITION_SOURCE=alsa_input.usb-Your_Interface.analog-stereo
-```
-
-List sources:
-
-```bash
-pactl list short sources
-pactl list sources | grep -E 'Name:|Description:'
-```
-
-## Troubleshooting
-
-### The service says recognition is disabled
 
 Set:
 
@@ -141,45 +32,90 @@ Set:
 RECOGNITION_ENABLED=true
 ```
 
-then restart `rca-now-playing.service`.
-
-### Missing client key
-
-Set `ACOUSTID_CLIENT_KEY` in `/etc/rca-hdmi-visualizer.secrets`.
-
-### Silence detected even while music plays
-
-Lower the gate:
-
-```env
-RECOGNITION_MIN_RMS=75
-```
-
-or verify `SOURCE_MATCH`/`RECOGNITION_SOURCE` points to the USB capture source.
-
-### Low score / no match
-
-Try longer samples:
-
-```env
-RECOGNITION_SAMPLE_SECONDS=60
-```
-
-For vinyl, avoid sampling the lead-in/lead-out and verify the record is playing at the correct speed.
-
-### Overlay is not visible
-
-Check:
+Then restart:
 
 ```bash
-systemctl status rca-now-playing-overlay.service
+sudo systemctl restart rca-now-playing.service rca-now-playing-overlay.service
+```
+
+## Recommended timing
+
+Default conservative settings:
+
+```env
+RECOGNITION_SAMPLE_SECONDS=12
+RECOGNITION_INTERVAL_SECONDS=180
+RECOGNITION_COOLDOWN_SECONDS=600
+RECOGNITION_MIN_RMS=150
+RECOGNITION_KEEP_LAST_ON_MISS=true
+```
+
+Meaning:
+
+- record a 12-second sample
+- if not recognized, wait 3 minutes before trying again
+- if the same track is recognized again, wait 10 minutes before trying again
+- skip network lookup when the sample is below the RMS silence threshold
+
+Shorter samples can work with the Shazam-style backend, but reliability depends
+on the exact passage. Use 12 seconds as the starting point. If recognition is
+spotty, try 15-20 seconds before increasing polling frequency.
+
+## Source selection
+
+If the wrong source is used, inspect PulseAudio source names:
+
+```bash
+sudo -u "$USER" XDG_RUNTIME_DIR=/run/user/$(id -u "$USER") pactl list short sources
+```
+
+Then set the exact source:
+
+```env
+RECOGNITION_SOURCE=alsa_input.usb-IK_Multimedia_iRig_HD_X_0502161-02.analog-mono
+RECOGNITION_CHANNELS=1
+```
+
+Restart recognition after changing the source:
+
+```bash
+sudo systemctl restart rca-now-playing.service
+```
+
+## One-shot test
+
+With music playing:
+
+```bash
+sudo rca-now-playing identify-once
+jq . /var/lib/rca-hdmi-visualizer/now-playing.json
+```
+
+Useful status values:
+
+- `recognized`: song/artist found and overlay should show it.
+- `no_match`: audio was present, but the recognizer did not find a match.
+- `silence`: sample RMS was below `RECOGNITION_MIN_RMS`; check input level/source.
+- `error`: recognizer setup/network/runtime error; check `message` and service logs.
+
+## Logs
+
+```bash
+journalctl -u rca-now-playing.service -f
 journalctl -u rca-now-playing-overlay.service -f
 ```
 
-For debugging, set:
+## Overlay behavior
+
+The overlay shows only recognized tracks by default. To show diagnostic states
+such as silence/no-match while testing:
 
 ```env
 OVERLAY_SHOW_UNRECOGNIZED=true
 ```
 
-Then restart the overlay service.
+Restart the overlay after changing it:
+
+```bash
+sudo systemctl restart rca-now-playing-overlay.service
+```

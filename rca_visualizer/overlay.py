@@ -15,6 +15,7 @@ class OverlayState:
         album="",
         score=0.0,
         recognized_at="",
+        provider="",
         message="",
     ):
         self.status = status
@@ -22,6 +23,7 @@ class OverlayState:
         self.artist = artist
         self.album = album
         self.score = score
+        self.provider = provider
         self.recognized_at = recognized_at
         self.message = message
 
@@ -110,6 +112,7 @@ class NowPlayingOverlay:
             artist=str(data.get("artist") or ""),
             album=str(data.get("album") or ""),
             score=float(data.get("score") or 0.0),
+            provider=str(data.get("provider") or ""),
             recognized_at=str(data.get("recognized_at") or ""),
             message=str(data.get("message") or ""),
         )
@@ -126,7 +129,7 @@ class NowPlayingOverlay:
             if state.album:
                 meta_parts.append(state.album)
             if state.score:
-                meta_parts.append("AcoustID score %.2f" % state.score)
+                meta_parts.append("%s score %.2f" % (state.provider.title() or "Recognition", state.score))
             self.meta_label.configure(text="  •  ".join(meta_parts))
         elif self.show_unrecognized:
             self.root.deiconify()

@@ -1,20 +1,17 @@
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
-import shlex
 import time
-import urllib.parse
-import urllib.request
 import wave
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import RuntimeConfig
 
-ACOUSTID_LOOKUP_URL = "https://api.acoustid.org/v2/lookup"
 SHAZAM_LOOKUP_SCRIPT = "/opt/rca-hdmi-visualizer/rca_visualizer/shazam_lookup.py"
 SHAZAM_VENV_PYTHON = "/opt/rca-hdmi-visualizer/shazam-venv/bin/python"
 
@@ -27,7 +24,7 @@ class RecognitionResult:
         artist="",
         album="",
         score=0.0,
-        provider="acoustid",
+        provider="shazam",
         recognized_at="",
         duration=0,
         acoustid="",
@@ -43,6 +40,8 @@ class RecognitionResult:
         self.provider = provider
         self.recognized_at = recognized_at
         self.duration = duration
+        # Kept for backward-compatible state JSON. For Shazam this stores the
+        # Shazam track key, not an AcoustID UUID.
         self.acoustid = acoustid
         self.musicbrainz_recording_id = musicbrainz_recording_id
         self.raw = raw
@@ -171,77 +170,22 @@ def record_sample(config, output_path, seconds):
     return output_path
 
 
-def wav_rms(path):
+def wav_stats(path):
     import audioop
 
     with wave.open(str(path), "rb") as wav:
         width = wav.getsampwidth()
+        frames = wav.getnframes()
+        rate = wav.getframerate()
         total_rms = 0.0
         chunks = 0
         while True:
-            data = wav.readframes(44100)
+            data = wav.readframes(rate)
             if not data:
                 break
             total_rms += audioop.rms(data, width)
             chunks += 1
-    return total_rms / max(chunks, 1)
-
-
-def fingerprint(path):
-    result = run(["fpcalc", "-json", str(path)], timeout=120)
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "fpcalc failed")
-    return json.loads(result.stdout)
-
-
-def lookup_acoustid(client_key, fp, duration, timeout=30):
-    payload = urllib.parse.urlencode(
-        {
-            "client": client_key,
-            "duration": str(duration),
-            "fingerprint": fp,
-            "meta": "recordings+releasegroups+compress",
-            "format": "json",
-        }
-    ).encode()
-    request = urllib.request.Request(
-        ACOUSTID_LOOKUP_URL,
-        data=payload,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-def best_result(data, min_score):
-    results = data.get("results") or []
-    if not results:
-        return RecognitionResult(status="no_match", recognized_at=now_iso(), raw=data)
-
-    best = max(results, key=lambda item: float(item.get("score") or 0.0))
-    score = float(best.get("score") or 0.0)
-    recordings = best.get("recordings") or []
-    recording = recordings[0] if recordings else {}
-    artists = recording.get("artists") or []
-    releasegroups = recording.get("releasegroups") or []
-
-    artist = ", ".join(a.get("name", "") for a in artists if a.get("name"))
-    album = releasegroups[0].get("title", "") if releasegroups else ""
-    title = recording.get("title", "")
-
-    status = "recognized" if score >= min_score and title else "low_score"
-    return RecognitionResult(
-        status=status,
-        title=title,
-        artist=artist,
-        album=album,
-        score=score,
-        recognized_at=now_iso(),
-        acoustid=best.get("id", ""),
-        musicbrainz_recording_id=recording.get("id", ""),
-        raw=data,
-    )
+    return total_rms / max(chunks, 1), int(round(float(frames) / float(rate or 1)))
 
 
 def write_state(path, result):
@@ -257,7 +201,7 @@ def identify_with_shazam(path):
             status="error",
             provider="shazam",
             recognized_at=now_iso(),
-            message="Shazam fallback is not installed",
+            message="Shazam recognizer is not installed",
         )
     result = run([SHAZAM_VENV_PYTHON, SHAZAM_LOOKUP_SCRIPT, str(path)], timeout=90)
     if result.returncode != 0:
@@ -273,43 +217,30 @@ def identify_with_shazam(path):
 
 
 def identify_once(config):
-    key = config.str("ACOUSTID_CLIENT_KEY")
-    if not key:
-        raise RuntimeError("ACOUSTID_CLIENT_KEY is missing; set it in /etc/rca-hdmi-visualizer.secrets")
-
-    seconds = config.int("RECOGNITION_SAMPLE_SECONDS", 45)
+    seconds = config.int("RECOGNITION_SAMPLE_SECONDS", 12)
     min_rms = config.float("RECOGNITION_MIN_RMS", 150.0)
-    min_score = config.float("RECOGNITION_MIN_SCORE", 0.80)
 
     with tempfile.TemporaryDirectory(prefix="rca-recognition-") as tmpdir:
         sample = Path(tmpdir) / "sample.wav"
         record_sample(config, sample, seconds)
-        rms = wav_rms(sample)
+        rms, duration = wav_stats(sample)
         if rms < min_rms:
             return RecognitionResult(
                 status="silence",
                 recognized_at=now_iso(),
+                duration=duration,
                 message="sample RMS %.1f below threshold %.1f" % (rms, min_rms),
             )
 
-        fp_data = fingerprint(sample)
-        data = lookup_acoustid(key, fp_data["fingerprint"], int(fp_data["duration"]))
-        result = best_result(data, min_score)
-        values = result.to_dict()
-        values["duration"] = int(fp_data["duration"])
-        result = RecognitionResult(**values)
-        if result.status in {"no_match", "low_score"} and config.bool("SHAZAM_FALLBACK_ENABLED", False):
-            shazam_result = identify_with_shazam(sample)
-            if shazam_result.status == "recognized":
-                shazam_result.duration = int(fp_data["duration"])
-                return shazam_result
+        result = identify_with_shazam(sample)
+        result.duration = duration
         return result
 
 
 def daemon(config):
     state_path = Path(config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json"))
-    interval = config.int("RECOGNITION_INTERVAL_SECONDS", 30)
-    cooldown = config.int("RECOGNITION_COOLDOWN_SECONDS", 75)
+    interval = config.int("RECOGNITION_INTERVAL_SECONDS", 180)
+    cooldown = config.int("RECOGNITION_COOLDOWN_SECONDS", 600)
     keep_last_on_miss = config.bool("RECOGNITION_KEEP_LAST_ON_MISS", True)
     enabled = config.bool("RECOGNITION_ENABLED", False)
     last_track_key = ""
@@ -324,10 +255,11 @@ def daemon(config):
             result = identify_once(config)
             track_key = (result.artist + "\0" + result.title).lower()
             print(
-                "%s: %s - %s score=%.3f %s" % (
+                "%s: %s - %s provider=%s score=%.3f %s" % (
                     result.status,
                     result.artist,
                     result.title,
+                    result.provider,
                     result.score,
                     result.message,
                 ),
@@ -350,7 +282,7 @@ def daemon(config):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="AcoustID now-playing recognizer")
+    parser = argparse.ArgumentParser(description="Shazam now-playing recognizer")
     parser.add_argument("command", choices=["identify-once", "daemon"])
     parser.add_argument("--state", default="", help="Override now-playing JSON state path")
     args = parser.parse_args(argv)
@@ -364,7 +296,7 @@ def main(argv=None):
         state_path = Path(config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json"))
         write_state(state_path, result)
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-        return 0 if result.status in {"recognized", "low_score", "no_match", "silence"} else 1
+        return 0 if result.status in {"recognized", "no_match", "silence"} else 1
 
     daemon(config)
     return 0

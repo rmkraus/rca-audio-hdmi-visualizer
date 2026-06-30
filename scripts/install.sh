@@ -100,7 +100,6 @@ APT_PACKAGES=(
   curl
   ca-certificates
   ffmpeg
-  libchromaprint-tools
   python3-tk
 )
 
@@ -335,10 +334,9 @@ LightDM session: $SESSION_NAME
 
 Recommended next steps:
   1. Log into Tailscale manually: sudo tailscale up
-  2. Add your AcoustID client key to /etc/rca-hdmi-visualizer.secrets
-  3. Enable recognition with RECOGNITION_ENABLED=true in $ENV_FILE
-  4. Reboot: sudo reboot
-  5. If audio routing is wrong, edit SOURCE_MATCH/SINK_MATCH in $ENV_FILE
-  6. Check services with: systemctl status rca-cavasik-kiosk rca-audio-loopback rca-now-playing rca-now-playing-overlay
-  7. Check Cavasik availability with: check-cavasik --run-test
+  2. Enable recognition with RECOGNITION_ENABLED=true in $ENV_FILE
+  3. Reboot: sudo reboot
+  4. If audio routing is wrong, edit SOURCE_MATCH/SINK_MATCH in $ENV_FILE
+  5. Check services with: systemctl status rca-cavasik-kiosk rca-audio-loopback rca-now-playing rca-now-playing-overlay
+  6. Check Cavasik availability with: check-cavasik --run-test
 EOF
