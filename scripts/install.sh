@@ -100,7 +100,7 @@ APT_PACKAGES=(
   curl
   ca-certificates
   ffmpeg
-  chromaprint-tools
+  libchromaprint-tools
   python3-tk
 )
 
