@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
+import audioop
 import math
 import os
 import pwd
 import struct
 import subprocess
-import time
 from tkinter import BOTH, Canvas, Tk
 
 
@@ -39,6 +39,10 @@ def current_username():
         return ''
 
 
+def clamp(value, low=0.0, high=1.0):
+    return max(low, min(high, value))
+
+
 class Visualizer:
     def __init__(self):
         self.cfg = env_file('/etc/rca-hdmi-visualizer.env')
@@ -46,11 +50,14 @@ class Visualizer:
         self.source = self.cfg.get('RECOGNITION_SOURCE') or self.cfg.get('SOURCE_MATCH') or ''
         self.rate = int(self.cfg.get('RECOGNITION_SAMPLE_RATE', '44100') or '44100')
         self.channels = int(self.cfg.get('RECOGNITION_CHANNELS', '1') or '1')
-        self.chunk_frames = 2048
-        self.bars = [0.03] * 48
+        self.chunk_frames = 4096
+        self.samples = [0.0] * 96
+        self.level = 0.0
+        self.peak = 0.0
+        self.noise_floor = float(self.cfg.get('VISUALIZER_NOISE_FLOOR', '220') or '220')
+        self.scale = float(self.cfg.get('VISUALIZER_SCALE', '2600') or '2600')
         self.proc = None
         self.last_error = ''
-        self.started_at = time.time()
 
         self.root = Tk()
         self.root.title('RCA Audio Visualizer')
@@ -84,7 +91,7 @@ class Visualizer:
             self.proc = None
             self.last_error = str(exc)
 
-    def next_level(self):
+    def read_audio(self):
         if not self.proc or self.proc.poll() is not None:
             if self.proc and self.proc.stderr:
                 try:
@@ -92,51 +99,95 @@ class Visualizer:
                 except Exception:
                     pass
             self.start_capture()
-            return 0.0
+            return []
         wanted = self.chunk_frames * self.channels * 2
         data = self.proc.stdout.read(wanted)
         if not data:
-            return 0.0
+            return []
+        if self.channels > 1:
+            data = audioop.tomono(data, 2, 0.5, 0.5)
         count = len(data) // 2
-        samples = struct.unpack('<%dh' % count, data[:count * 2])
-        avg = sum(abs(x) for x in samples) / float(max(count, 1))
-        # iRig/vinyl levels on musicman can be quiet. Scale aggressively so
-        # quiet-but-real audio is visible instead of looking like a black panel.
-        return min(1.0, avg / 350.0)
+        if not count:
+            return []
+        return struct.unpack('<%dh' % count, data[:count * 2])
+
+    def audio_to_columns(self, samples, columns):
+        if not samples:
+            return [0.0] * columns, 0.0
+        avg_abs = sum(abs(x) for x in samples) / float(len(samples))
+        level = clamp((avg_abs - self.noise_floor) / max(self.scale, 1.0))
+
+        stride = max(1, len(samples) // columns)
+        vals = []
+        for idx in range(columns):
+            start = idx * stride
+            chunk = samples[start:start + stride]
+            if not chunk:
+                vals.append(0.0)
+                continue
+            # Peak-minus-noise tracks actual waveform energy in this slice.
+            peak = max(abs(x) for x in chunk)
+            vals.append(clamp((peak - self.noise_floor) / max(self.scale * 3.0, 1.0)))
+        return vals, level
 
     def tick(self):
-        level = self.next_level()
-        self.bars.pop(0)
-        self.bars.append(max(0.025, level))
-        self.draw(level)
+        samples = self.read_audio()
+        new_samples, new_level = self.audio_to_columns(samples, len(self.samples))
+        # Smooth enough to stop random pumping, but not so much that beats vanish.
+        self.samples = [old * 0.55 + new * 0.45 for old, new in zip(self.samples, new_samples)]
+        self.level = self.level * 0.80 + new_level * 0.20
+        self.peak = max(self.level, self.peak * 0.96)
+        self.draw()
         self.root.after(33, self.tick)
 
-    def draw(self, level):
+    def draw(self):
         w = max(self.canvas.winfo_width(), 1)
         h = max(self.canvas.winfo_height(), 1)
         self.canvas.delete('all')
-        n = len(self.bars)
-        gap = 6
-        bar_w = max(4, (w - gap * (n + 1)) // n)
-        baseline = int(h * 0.78)
-        max_h = int(h * 0.58)
+        n = len(self.samples)
+        gap = 4
+        bar_w = max(3, (w - gap * (n + 1)) // n)
+        mid = int(h * 0.52)
+        max_h = int(h * 0.33)
 
-        # Subtle non-black background grid so an idle input still shows life.
         for y in range(int(h * 0.18), int(h * 0.86), max(28, h // 18)):
             self.canvas.create_line(0, y, w, y, fill='#020b08')
+        self.canvas.create_line(0, mid, w, mid, fill='#063024')
 
-        for i, val in enumerate(self.bars):
-            shaped = math.sqrt(max(0.0, val))
-            bh = max(4, int(max_h * shaped))
+        for i, val in enumerate(self.samples):
+            # A small floor keeps the UI visible without pretending silence is loud.
+            shaped = math.sqrt(max(0.012, val))
+            bh = max(3, int(max_h * shaped))
             x0 = gap + i * (bar_w + gap)
             x1 = x0 + bar_w
-            y0 = baseline - bh
-            color = '#%02x%02x%02x' % (40 + int(80 * shaped), 120 + int(120 * shaped), 95 + int(80 * shaped))
-            self.canvas.create_rectangle(x0, y0, x1, baseline, fill=color, outline='')
-            self.canvas.create_rectangle(x0, baseline, x1, baseline + bh // 3, fill='#103020', outline='')
+            brightness = int(70 * clamp(val * 2.5))
+            color = '#%02x%02x%02x' % (35 + brightness, 135 + brightness, 105 + brightness)
+            self.canvas.create_rectangle(x0, mid - bh, x1, mid + bh, fill=color, outline='')
+
+        meter_w = int(w * 0.62)
+        meter_h = max(8, h // 120)
+        meter_x = (w - meter_w) // 2
+        meter_y = int(h * 0.84)
+        self.canvas.create_rectangle(meter_x, meter_y, meter_x + meter_w, meter_y + meter_h, fill='#06120f', outline='#12382d')
+        self.canvas.create_rectangle(
+            meter_x,
+            meter_y,
+            meter_x + int(meter_w * clamp(self.level)),
+            meter_y + meter_h,
+            fill='#4de0a3',
+            outline='',
+        )
+        self.canvas.create_rectangle(
+            meter_x + int(meter_w * clamp(self.peak)),
+            meter_y - 4,
+            meter_x + int(meter_w * clamp(self.peak)) + 2,
+            meter_y + meter_h + 4,
+            fill='#d7ffe8',
+            outline='',
+        )
 
         self.canvas.create_text(w // 2, int(h * 0.10), text='musicman', fill='#606060', font=('DejaVu Sans', 24))
-        label = 'input %d%%' % int(level * 100)
+        label = 'input %d%%' % int(clamp(self.level) * 100)
         if self.last_error:
             label += '  capture: %s' % self.last_error.strip().replace('\n', ' ')
         self.canvas.create_text(w // 2, int(h * 0.88), text=label, fill='#707070', font=('DejaVu Sans', 18))
