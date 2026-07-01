@@ -12,12 +12,19 @@ from .config import RuntimeConfig
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
 
+def public_runtime_config(config):
+    return {
+        "recognition_min_rms": config.float("RECOGNITION_MIN_RMS", 150.0),
+    }
+
+
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
 class NowPlayingHandler(SimpleHTTPRequestHandler):
     state_path = Path("/var/lib/rca-hdmi-visualizer/now-playing.json")
+    public_config = {"recognition_min_rms": 150.0}
 
     def translate_path(self, path):
         """Serve files from WEB_DIR without depending on the process cwd.
@@ -44,6 +51,9 @@ class NowPlayingHandler(SimpleHTTPRequestHandler):
         if path == "/api/now-playing":
             self.serve_state()
             return
+        if path == "/api/config":
+            self.serve_config()
+            return
         if path == "/":
             self.path = "/index.html"
         return super().do_GET()
@@ -56,6 +66,12 @@ class NowPlayingHandler(SimpleHTTPRequestHandler):
                 payload = {"status": "error", "message": str(exc)}
         else:
             payload = {"status": "waiting", "message": "No now-playing state yet"}
+        self.send_json(payload)
+
+    def serve_config(self):
+        self.send_json(self.public_config)
+
+    def send_json(self, payload):
         body = (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -75,6 +91,7 @@ def main(argv=None):
     config = RuntimeConfig.load()
     state = args.state or config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json")
     NowPlayingHandler.state_path = Path(state)
+    NowPlayingHandler.public_config = public_runtime_config(config)
 
     server = ThreadingHTTPServer((args.host, args.port), NowPlayingHandler)
     print("Serving now-playing UI at http://%s:%s/" % (args.host, args.port), flush=True)

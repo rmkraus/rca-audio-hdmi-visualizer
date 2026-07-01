@@ -26,9 +26,14 @@ const meters = {
   input: {
     needle: document.getElementById("input-needle"),
     readout: document.getElementById("input-readout"),
+    threshold: document.getElementById("input-threshold"),
     value: 0,
     target: 0,
   },
+};
+
+const runtimeConfig = {
+  recognitionMinRms: 150,
 };
 
 function tokenize(text) {
@@ -173,12 +178,23 @@ function confidenceRatio(data) {
   return clamp01(score);
 }
 
-function inputRatio(data) {
-  const rms = Math.max(0, Number(data.rms || 0));
+function inputRatioFromRms(rms) {
+  rms = Math.max(0, Number(rms || 0));
   if (!rms) return 0;
   // 16-bit audio RMS runs 0..32768. Use a logarithmic-ish scale so normal
   // line input movement is visible without pinning the meter constantly.
   return clamp01(Math.log10(1 + rms) / Math.log10(1 + 9000));
+}
+
+function inputRatio(data) {
+  return inputRatioFromRms(data.rms);
+}
+
+function setInputThresholdMarker() {
+  if (!meters.input.threshold) return;
+  const angle = needleAngle(inputRatioFromRms(runtimeConfig.recognitionMinRms), 0);
+  meters.input.threshold.style.transform = `rotate(${angle.toFixed(2)}deg)`;
+  meters.input.threshold.title = `Silence threshold RMS ${Math.round(runtimeConfig.recognitionMinRms)}`;
 }
 
 function setMeters(data) {
@@ -282,6 +298,18 @@ function updateDisplay(data) {
   setMeters(data);
 }
 
+async function fetchConfig() {
+  try {
+    const res = await fetch(`/api/config?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    runtimeConfig.recognitionMinRms = Math.max(0, Number(data.recognition_min_rms || runtimeConfig.recognitionMinRms));
+  } catch (err) {
+    // Keep default marker if config is temporarily unavailable.
+  }
+  setInputThresholdMarker();
+}
+
 async function fetchState() {
   try {
     const res = await fetch(`/api/now-playing?t=${Date.now()}`, { cache: "no-store" });
@@ -314,6 +342,8 @@ function init() {
     shazam_requests_per_min: 0,
   });
   animateMeters();
+  setInputThresholdMarker();
+  fetchConfig();
   fetchState();
   setInterval(fetchState, 1000);
 }

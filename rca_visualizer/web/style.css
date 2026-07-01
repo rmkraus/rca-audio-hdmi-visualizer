@@ -371,6 +371,45 @@ body::after {
   transition: transform 90ms linear;
 }
 
+.meter-threshold {
+  position: absolute;
+  z-index: 3;
+  left: calc(50% - 1px);
+  bottom: 17px;
+  width: 2px;
+  height: 82px;
+  transform-origin: 50% 100%;
+  transform: rotate(-54deg);
+  pointer-events: none;
+}
+
+.meter-threshold::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 10px;
+  height: 18px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #fff1ad, #e0a516 68%, #653900);
+  box-shadow:
+    0 0 0 1px rgba(50,24,0,0.82),
+    0 0 9px rgba(255,190,56,0.48);
+}
+
+.meter-threshold::after {
+  content: "SILENCE";
+  position: absolute;
+  left: -27px;
+  top: 17px;
+  color: rgba(78,40,8,0.76);
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 0 rgba(255,242,190,0.35);
+}
+
 .meter-pivot {
   position: absolute;
   z-index: 5;
@@ -656,6 +695,7 @@ body[data-listening="true"] .lamp.listening {
   .meter-stack { right: 58px; width: 220px; gap: 18px; }
   .meter-face { height: 116px; }
   .meter-needle { height: 80px; }
+  .meter-threshold { height: 70px; }
   .controls { left: 82px; right: 82px; }
 }
 
