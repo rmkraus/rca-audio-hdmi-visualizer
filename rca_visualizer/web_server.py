@@ -1,11 +1,11 @@
 import argparse
 import json
 import mimetypes
-import os
+import posixpath
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from socketserver import ThreadingMixIn
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from .config import RuntimeConfig
 
@@ -18,6 +18,22 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 
 class NowPlayingHandler(SimpleHTTPRequestHandler):
     state_path = Path("/var/lib/rca-hdmi-visualizer/now-playing.json")
+
+    def translate_path(self, path):
+        """Serve files from WEB_DIR without depending on the process cwd.
+
+        The installer replaces /opt/rca-hdmi-visualizer atomically. If the web
+        service keeps running from the old deleted cwd, Python 3.6's default
+        SimpleHTTPRequestHandler raises FileNotFoundError on every static
+        request. Resolve paths from WEB_DIR directly instead.
+        """
+        path = urlparse(path).path
+        path = posixpath.normpath(unquote(path))
+        parts = [part for part in path.split("/") if part and part not in {".", ".."}]
+        resolved = WEB_DIR
+        for part in parts:
+            resolved = resolved / part
+        return str(resolved)
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
@@ -59,7 +75,6 @@ def main(argv=None):
     config = RuntimeConfig.load()
     state = args.state or config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json")
     NowPlayingHandler.state_path = Path(state)
-    os.chdir(str(WEB_DIR))
 
     server = ThreadingHTTPServer((args.host, args.port), NowPlayingHandler)
     print("Serving now-playing UI at http://%s:%s/" % (args.host, args.port), flush=True)
