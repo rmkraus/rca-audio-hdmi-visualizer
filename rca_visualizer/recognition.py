@@ -370,9 +370,14 @@ def daemon(config):
     while True:
         sleep_for = 0
         try:
+            # During scheduled/forced rechecks, keep the recognized status and
+            # existing progress fields on screen while the new sample records.
+            # The UI still shows "Listening" from the flag below, but the timer
+            # can keep advancing from the prior recognized_at/progress state.
+            listening_status = "recognized" if last_display_result.status == "recognized" else "listening"
             listening_result = copy_display_result(
                 last_display_result,
-                status="listening",
+                status=listening_status,
                 playback_status=playback_status,
                 listening=True,
                 message="recording %s second sample" % sample_seconds,
@@ -455,27 +460,56 @@ def daemon(config):
                         )
                     elif result.status in {"no_match", "error"}:
                         no_match_count += 1
-                        # Bad Shazam responses should not leave stale track data
-                        # on screen.
-                        result.title = ""
-                        result.artist = ""
-                        result.album = ""
-                        result.track_duration_ms = 0
-                        result.progress_start_seconds = None
-                        result.match_offset_seconds = None
-                        result.playback_status = playback_status
-                        result.message = result.message or "bad Shazam response %s/%s" % (no_match_count, no_match_limit)
-                        if no_match_count >= no_match_limit:
-                            result.status = "backing_off"
-                            result.backing_off = True
-                            result.message = "backing off for %s seconds after %s bad Shazam responses" % (
-                                no_match_backoff,
-                                no_match_limit,
+                        if last_display_result.status == "recognized":
+                            # A forced mid-track recheck can occasionally miss even while
+                            # the current song is still playing. Keep the visible song and
+                            # progress estimate instead of blinking the board blank; the
+                            # status line still reports the bad response/backoff.
+                            prior = last_display_result
+                            kept = copy_display_result(
+                                prior,
+                                status="recognized",
+                                playback_status=playback_status,
+                                listening=False,
+                                backing_off=no_match_count >= no_match_limit,
+                                message=result.message
+                                or "bad Shazam response %s/%s; keeping previous song on screen"
+                                % (no_match_count, no_match_limit),
                             )
-                            sleep_for = no_match_backoff
-                            no_match_count = 0
-                        write_state(state_path, result)
-                        last_display_result = result
+                            kept.duration = duration
+                            kept.rms = rms
+                            if no_match_count >= no_match_limit:
+                                kept.message = "backing off for %s seconds after %s bad Shazam responses; keeping previous song on screen" % (
+                                    no_match_backoff,
+                                    no_match_limit,
+                                )
+                                sleep_for = no_match_backoff
+                                no_match_count = 0
+                            attach_metrics(kept, shazam_request_count, request_rate(shazam_request_times))
+                            write_state(state_path, kept)
+                            last_display_result = kept
+                        else:
+                            # Bad Shazam responses should not leave stale track data
+                            # on screen when there is no previous recognized track to keep.
+                            result.title = ""
+                            result.artist = ""
+                            result.album = ""
+                            result.track_duration_ms = 0
+                            result.progress_start_seconds = None
+                            result.match_offset_seconds = None
+                            result.playback_status = playback_status
+                            result.message = result.message or "bad Shazam response %s/%s" % (no_match_count, no_match_limit)
+                            if no_match_count >= no_match_limit:
+                                result.status = "backing_off"
+                                result.backing_off = True
+                                result.message = "backing off for %s seconds after %s bad Shazam responses" % (
+                                    no_match_backoff,
+                                    no_match_limit,
+                                )
+                                sleep_for = no_match_backoff
+                                no_match_count = 0
+                            write_state(state_path, result)
+                            last_display_result = result
                     else:
                         result.title = ""
                         result.artist = ""
