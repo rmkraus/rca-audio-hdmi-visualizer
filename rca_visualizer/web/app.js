@@ -22,6 +22,7 @@ const meters = {
     readout: document.getElementById("confidence-readout"),
     value: 0,
     target: 0,
+    active: false,
   },
   input: {
     needle: document.getElementById("input-needle"),
@@ -218,7 +219,8 @@ function setInputThresholdMarker() {
 }
 
 function setMeters(data) {
-  meters.confidence.target = data.status === "recognized" ? confidenceRatio(data) : 0;
+  meters.confidence.active = data.status === "recognized" && data.playback_status !== "stopped";
+  meters.confidence.target = meters.confidence.active ? confidenceRatio(data) : 0;
   meters.input.target = inputRatio(data);
   if (meters.confidence.readout) {
     meters.confidence.readout.textContent = `MATCH ${Math.round(meters.confidence.target * 100)}%`;
@@ -236,8 +238,11 @@ function animateMeters() {
   const t = Date.now() / 1000;
   Object.entries(meters).forEach(([name, meter], i) => {
     meter.value += (meter.target - meter.value) * 0.12;
-    const activity = Math.max(0.025, meter.value * 0.035);
-    const jitter = Math.sin(t * (5.8 + i * 1.7)) * activity * 100 + Math.sin(t * (11.3 + i)) * activity * 38;
+    const isConfidenceInactive = name === "confidence" && !meter.active;
+    const activity = isConfidenceInactive ? 0 : Math.max(0.025, meter.value * 0.035);
+    const jitter = activity
+      ? Math.sin(t * (5.8 + i * 1.7)) * activity * 100 + Math.sin(t * (11.3 + i)) * activity * 38
+      : 0;
     if (meter.needle) {
       meter.needle.style.transform = `rotate(${needleAngle(meter.value, jitter).toFixed(2)}deg)`;
     }
