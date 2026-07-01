@@ -48,12 +48,12 @@ body::after {
   pointer-events: none;
   opacity: 0;
   background:
-    radial-gradient(ellipse 18vw 40vh at left 50%,
+    radial-gradient(ellipse 18vw 40vh at -15px 50%,
       rgba(255,184,72,0.36) 0%,
       rgba(255,138,26,0.18) 28%,
       rgba(255,118,18,0.070) 58%,
       transparent 100%),
-    radial-gradient(ellipse 18vw 40vh at right 50%,
+    radial-gradient(ellipse 18vw 40vh at calc(100% + 15px) 50%,
       rgba(255,184,72,0.36) 0%,
       rgba(255,138,26,0.18) 28%,
       rgba(255,118,18,0.070) 58%,
@@ -121,8 +121,8 @@ body[data-sign-light="off"]::after {
   pointer-events: none;
   opacity: 0;
   background:
-    radial-gradient(ellipse 15vw 38vh at left 50%, rgba(255,152,34,0.13) 0%, rgba(255,122,22,0.070) 42%, transparent 100%),
-    radial-gradient(ellipse 15vw 38vh at right 50%, rgba(255,152,34,0.13) 0%, rgba(255,122,22,0.070) 42%, transparent 100%);
+    radial-gradient(ellipse 15vw 38vh at -15px 50%, rgba(255,152,34,0.13) 0%, rgba(255,122,22,0.070) 42%, transparent 100%),
+    radial-gradient(ellipse 15vw 38vh at calc(100% + 15px) 50%, rgba(255,152,34,0.13) 0%, rgba(255,122,22,0.070) 42%, transparent 100%);
   transition: opacity 120ms ease-out;
 }
 
