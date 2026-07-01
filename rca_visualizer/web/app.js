@@ -1,10 +1,8 @@
 const DISPLAY_LEN = 32;
 const PROGRESS_LEN = DISPLAY_LEN;
-const PROGRESS_FILLED = "█";
-const PROGRESS_EMPTY = "░";
 const STEP_MS = 28;
 const TILE_STAGGER_MS = 18;
-const TEXT_CHARS = Array.from(" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/:.'&,()[]!?█░");
+const TEXT_CHARS = Array.from(" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/:.'&,()[]!?");
 const TIME_CHARS = Array.from(" 0123456789:/");
 
 const rows = {
@@ -16,26 +14,6 @@ const rows = {
   time: { el: document.getElementById("line-time"), tiles: [], tokens: [], charset: TIME_CHARS },
 };
 
-const meters = {
-  confidence: {
-    needle: document.getElementById("confidence-needle"),
-    readout: document.getElementById("confidence-readout"),
-    value: 0,
-    target: 0,
-    active: false,
-  },
-  input: {
-    needle: document.getElementById("input-needle"),
-    readout: document.getElementById("input-readout"),
-    threshold: document.getElementById("input-threshold"),
-    value: 0,
-    target: 0,
-  },
-};
-
-const runtimeConfig = {
-  recognitionMinRms: 150,
-};
 
 function tokenize(text) {
   return Array.from(String(text || "").replaceAll("️", ""));
@@ -69,7 +47,6 @@ function setTileChar(tile, ch) {
   tile.querySelector(".top .char").textContent = ch;
   tile.querySelector(".bottom .char").textContent = ch;
   tile.dataset.char = ch;
-  tile.dataset.progress = ch === PROGRESS_FILLED ? "filled" : (ch === PROGRESS_EMPTY ? "empty" : "");
 }
 
 function pulseTile(tile) {
@@ -193,62 +170,6 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
 }
 
-function confidenceRatio(data) {
-  const score = Number(data.score || 0);
-  if (score > 1) return clamp01(score / 100);
-  return clamp01(score);
-}
-
-function inputRatioFromRms(rms) {
-  rms = Math.max(0, Number(rms || 0));
-  if (!rms) return 0;
-  // 16-bit audio RMS runs 0..32768. Use a logarithmic-ish scale so normal
-  // line input movement is visible without pinning the meter constantly.
-  return clamp01(Math.log10(1 + rms) / Math.log10(1 + 9000));
-}
-
-function inputRatio(data) {
-  return inputRatioFromRms(data.rms);
-}
-
-function setInputThresholdMarker() {
-  if (!meters.input.threshold) return;
-  const angle = needleAngle(inputRatioFromRms(runtimeConfig.recognitionMinRms), 0);
-  meters.input.threshold.style.transform = `rotate(${angle.toFixed(2)}deg)`;
-  meters.input.threshold.title = `Silence threshold RMS ${Math.round(runtimeConfig.recognitionMinRms)}`;
-}
-
-function setMeters(data) {
-  meters.confidence.active = data.status === "recognized" && data.playback_status !== "stopped";
-  meters.confidence.target = meters.confidence.active ? confidenceRatio(data) : 0;
-  meters.input.target = inputRatio(data);
-  if (meters.confidence.readout) {
-    meters.confidence.readout.textContent = `MATCH ${Math.round(meters.confidence.target * 100)}%`;
-  }
-  if (meters.input.readout) {
-    meters.input.readout.textContent = `RMS ${Math.round(Math.max(0, Number(data.rms || 0)))}`;
-  }
-}
-
-function needleAngle(value, jitter = 0) {
-  return -54 + clamp01(value) * 108 + jitter;
-}
-
-function animateMeters() {
-  const t = Date.now() / 1000;
-  Object.entries(meters).forEach(([name, meter], i) => {
-    meter.value += (meter.target - meter.value) * 0.12;
-    const isConfidenceInactive = name === "confidence" && !meter.active;
-    const activity = isConfidenceInactive ? 0 : Math.max(0.025, meter.value * 0.035);
-    const jitter = activity
-      ? Math.sin(t * (5.8 + i * 1.7)) * activity * 100 + Math.sin(t * (11.3 + i)) * activity * 38
-      : 0;
-    if (meter.needle) {
-      meter.needle.style.transform = `rotate(${needleAngle(meter.value, jitter).toFixed(2)}deg)`;
-    }
-  });
-  requestAnimationFrame(animateMeters);
-}
 
 function parseDate(text) {
   if (!text) return null;
@@ -320,20 +241,8 @@ function updateDisplay(data) {
     setProgressBulbs(rows.progress, p.ratio);
   }
   updateStats(data);
-  setMeters(data);
 }
 
-async function fetchConfig() {
-  try {
-    const res = await fetch(`/api/config?t=${Date.now()}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    runtimeConfig.recognitionMinRms = Math.max(0, Number(data.recognition_min_rms || runtimeConfig.recognitionMinRms));
-  } catch (err) {
-    // Keep default marker if config is temporarily unavailable.
-  }
-  setInputThresholdMarker();
-}
 
 async function fetchState() {
   try {
@@ -358,17 +267,12 @@ function init() {
     title: "Please Don't Bury Me (2020 Remaster)",
     artist: "John Prine",
     album: "Pink Cadillac",
-    score: 0.88,
-    rms: 2250,
     track_duration_ms: 219000,
     progress_start_seconds: 112,
     recognized_at: new Date().toISOString(),
     shazam_request_count: 0,
     shazam_requests_per_min: 0,
   });
-  animateMeters();
-  setInputThresholdMarker();
-  fetchConfig();
   fetchState();
   setInterval(fetchState, 1000);
 }
