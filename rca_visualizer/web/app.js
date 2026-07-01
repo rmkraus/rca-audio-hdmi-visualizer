@@ -4,9 +4,7 @@ const PROGRESS_FILLED = "█";
 const PROGRESS_EMPTY = "░";
 const STEP_MS = 28;
 const TILE_STAGGER_MS = 18;
-const CHARS = Array.from(" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/:.'&,()[]!?█░").concat([
-  "🎵", "👤", "💿"
-]);
+const CHARS = Array.from(" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/:.'&,()[]!?█░");
 
 const rows = {
   track: { el: document.getElementById("line-track"), tiles: [], tokens: [] },
@@ -152,9 +150,9 @@ function updateStats(data) {
 
 function updateDisplay(data) {
   const good = data.status === "recognized";
-  setRow(rows.track, good ? `🎵 ${data.title || ""}` : "");
-  setRow(rows.artist, good ? `👤 ${data.artist || ""}` : "");
-  setRow(rows.record, good ? `💿 ${data.album || ""}` : "");
+  setRow(rows.track, good ? `${data.title || ""}` : "");
+  setRow(rows.artist, good ? `${data.artist || ""}` : "");
+  setRow(rows.record, good ? `${data.album || ""}` : "");
 
   const p = progress(data);
   if (!good || !p) {
