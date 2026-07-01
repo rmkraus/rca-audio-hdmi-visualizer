@@ -121,6 +121,11 @@ html, body {
   color: #35f06f;
   text-shadow: 0 0 8px rgba(53,240,111,0.45);
 }
+.time-label {
+  color: #f2efe6;
+  font-size: clamp(18px, 1.7vw, 32px);
+  opacity: 0.84;
+}
 .display {
   display: grid;
   grid-template-columns: repeat(32, minmax(0, 1fr));
@@ -135,6 +140,58 @@ html, body {
     inset 0 2px 8px rgba(0,0,0,0.9),
     inset 0 -1px 0 rgba(255,255,255,0.035),
     0 1px 0 rgba(255,255,255,0.04);
+}
+.time-row {
+  border-top: 8px solid #000;
+}
+.time-display-frame {
+  display: grid;
+  grid-template-columns: 2fr auto 2fr auto 2fr auto 2fr auto 2fr auto 2fr;
+  gap: 0;
+  align-items: stretch;
+  padding: 8px;
+  border: 3px solid #000;
+  border-radius: 2px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0) 18%),
+    var(--cutout);
+  box-shadow:
+    inset 0 2px 8px rgba(0,0,0,0.9),
+    inset 0 -1px 0 rgba(255,255,255,0.035),
+    0 1px 0 rgba(255,255,255,0.04);
+}
+.time-display-frame[data-active="0"] {
+  opacity: 0.48;
+}
+.time-display {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+}
+.time-display .tile .char {
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: clamp(16px, 2.1vw, 38px);
+}
+.metal-separator {
+  min-width: clamp(16px, 1.45vw, 30px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f2efe6;
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: clamp(18px, 2.1vw, 38px);
+  font-weight: 800;
+  line-height: 1;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0)),
+    var(--metal);
+  border-left: 4px solid #000;
+  border-right: 4px solid #000;
+  text-shadow: 0 2px 0 rgba(255,255,255,0.04), 0 2px 8px rgba(0,0,0,0.9);
+}
+.metal-separator.slash {
+  min-width: clamp(26px, 2.5vw, 48px);
+  color: #ffffff;
 }
 .progress-row {
   margin-top: 0;
@@ -268,7 +325,9 @@ html, body {
   background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)), var(--panel);
 }
 @media (max-width: 900px) {
-  .display-row { grid-template-columns: 44px 1fr; gap: 7px; }
+  .display-row { grid-template-columns: 44px 1fr; }
   .display { grid-template-columns: repeat(24, minmax(0, 1fr)); }
   .char { font-size: clamp(14px, 3vw, 30px); }
+  .time-display-frame { grid-template-columns: 2fr auto 2fr auto 2fr auto 2fr auto 2fr auto 2fr; }
+  .metal-separator { min-width: 12px; }
 }

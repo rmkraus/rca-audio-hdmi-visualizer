@@ -4,29 +4,37 @@ const PROGRESS_FILLED = "█";
 const PROGRESS_EMPTY = "░";
 const STEP_MS = 28;
 const TILE_STAGGER_MS = 18;
-const CHARS = Array.from(" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/:.'&,()[]!?█░");
+const TEXT_CHARS = Array.from(" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/:.'&,()[]!?█░");
+const DIGIT_CHARS = Array.from("0123456789");
 
 const rows = {
-  track: { el: document.getElementById("line-track"), tiles: [], tokens: [] },
-  artist: { el: document.getElementById("line-artist"), tiles: [], tokens: [] },
-  record: { el: document.getElementById("line-record"), tiles: [], tokens: [] },
-  progress: { el: document.getElementById("line-progress"), tiles: [], tokens: [] },
+  track: { el: document.getElementById("line-track"), tiles: [], tokens: [], charset: TEXT_CHARS },
+  artist: { el: document.getElementById("line-artist"), tiles: [], tokens: [], charset: TEXT_CHARS },
+  record: { el: document.getElementById("line-record"), tiles: [], tokens: [], charset: TEXT_CHARS },
+  progress: { el: document.getElementById("line-progress"), tiles: [], tokens: [], charset: TEXT_CHARS },
+  currentHh: { el: document.getElementById("time-current-hh"), tiles: [], tokens: [], charset: DIGIT_CHARS },
+  currentMm: { el: document.getElementById("time-current-mm"), tiles: [], tokens: [], charset: DIGIT_CHARS },
+  currentSs: { el: document.getElementById("time-current-ss"), tiles: [], tokens: [], charset: DIGIT_CHARS },
+  totalHh: { el: document.getElementById("time-total-hh"), tiles: [], tokens: [], charset: DIGIT_CHARS },
+  totalMm: { el: document.getElementById("time-total-mm"), tiles: [], tokens: [], charset: DIGIT_CHARS },
+  totalSs: { el: document.getElementById("time-total-ss"), tiles: [], tokens: [], charset: DIGIT_CHARS },
 };
 
 function tokenize(text) {
   return Array.from(String(text || "").replaceAll("️", ""));
 }
 
-function normalizeText(text, len = DISPLAY_LEN) {
-  const tokens = tokenize(text).map(ch => CHARS.includes(ch) ? ch : " ");
-  while (tokens.length < len) tokens.push(" ");
+function normalizeText(text, len = DISPLAY_LEN, charset = TEXT_CHARS) {
+  const tokens = tokenize(text).map(ch => charset.includes(ch) ? ch : (charset.includes(" ") ? " " : "0"));
+  while (tokens.length < len) tokens.push(charset.includes(" ") ? " " : "0");
   return tokens.slice(0, len);
 }
 
-function makeTile(ch, rowName = "") {
+function makeTile(ch, rowName = "", charsetName = "text") {
   const tile = document.createElement("div");
   tile.className = "tile";
   if (rowName) tile.dataset.row = rowName;
+  tile.dataset.charset = charsetName;
   tile.dataset.char = ch;
   tile.dataset.busy = "0";
   tile.innerHTML = `
@@ -54,8 +62,9 @@ function pulseTile(tile) {
   setTimeout(() => tile.classList.remove("animating"), 130);
 }
 
-function randomChar() {
-  return CHARS[Math.floor(Math.random() * CHARS.length)];
+function randomChar(tile) {
+  const chars = tile.dataset.charset === "digits" ? DIGIT_CHARS : TEXT_CHARS;
+  return chars[Math.floor(Math.random() * chars.length)];
 }
 
 function animateTileTo(tile, targetChar) {
@@ -78,7 +87,7 @@ function animateTileTo(tile, targetChar) {
     function tick() {
       step += 1;
       const latestTarget = tile.dataset.target || " ";
-      setTileChar(tile, step >= steps ? latestTarget : randomChar());
+      setTileChar(tile, step >= steps ? latestTarget : randomChar(tile));
       pulseTile(tile);
       if (step < steps) {
         setTimeout(tick, STEP_MS);
@@ -94,18 +103,18 @@ function animateTileTo(tile, targetChar) {
   runCycle();
 }
 
-function buildRow(row, len = DISPLAY_LEN) {
+function buildRow(row, len = DISPLAY_LEN, charsetName = "text") {
   row.el.innerHTML = "";
   row.tiles = [];
   for (let i = 0; i < len; i++) {
-    const tile = makeTile(" ", row.el.id || "");
+    const tile = makeTile(charsetName === "digits" ? "0" : " ", row.el.id || "", charsetName);
     row.el.appendChild(tile);
     row.tiles.push(tile);
   }
 }
 
 function setRow(row, text, len = DISPLAY_LEN) {
-  const next = normalizeText(text, len);
+  const next = normalizeText(text, len, row.charset || TEXT_CHARS);
   const old = row.tokens || [];
   row.tokens = next;
   next.forEach((ch, i) => {
@@ -129,6 +138,40 @@ function progress(data) {
   const total = data.track_duration_ms / 1000;
   const current = Math.min(total, Math.max(0, Number(data.progress_start_seconds) + elapsed));
   return { current, total, ratio: total > 0 ? current / total : 0 };
+}
+
+function timeParts(seconds) {
+  seconds = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hh = Math.floor(seconds / 3600);
+  const mm = Math.floor((seconds % 3600) / 60);
+  const ss = seconds % 60;
+  return {
+    hh: String(hh).padStart(2, "0").slice(-2),
+    mm: String(mm).padStart(2, "0"),
+    ss: String(ss).padStart(2, "0"),
+  };
+}
+
+function setTimeRow(p) {
+  if (!p) {
+    setRow(rows.currentHh, "00", 2);
+    setRow(rows.currentMm, "00", 2);
+    setRow(rows.currentSs, "00", 2);
+    setRow(rows.totalHh, "00", 2);
+    setRow(rows.totalMm, "00", 2);
+    setRow(rows.totalSs, "00", 2);
+    document.querySelector(".time-display-frame").dataset.active = "0";
+    return;
+  }
+  const current = timeParts(p.current);
+  const total = timeParts(p.total);
+  setRow(rows.currentHh, current.hh, 2);
+  setRow(rows.currentMm, current.mm, 2);
+  setRow(rows.currentSs, current.ss, 2);
+  setRow(rows.totalHh, total.hh, 2);
+  setRow(rows.totalMm, total.mm, 2);
+  setRow(rows.totalSs, total.ss, 2);
+  document.querySelector(".time-display-frame").dataset.active = "1";
 }
 
 function statusParts(data) {
@@ -155,6 +198,7 @@ function updateDisplay(data) {
   setRow(rows.record, good ? `${data.album || ""}` : "");
 
   const p = progress(data);
+  setTimeRow(good ? p : null);
   if (!good || !p) {
     setRow(rows.progress, "", PROGRESS_LEN);
   } else {
@@ -178,6 +222,12 @@ function init() {
   buildRow(rows.track);
   buildRow(rows.artist);
   buildRow(rows.record);
+  buildRow(rows.currentHh, 2, "digits");
+  buildRow(rows.currentMm, 2, "digits");
+  buildRow(rows.currentSs, 2, "digits");
+  buildRow(rows.totalHh, 2, "digits");
+  buildRow(rows.totalMm, 2, "digits");
+  buildRow(rows.totalSs, 2, "digits");
   buildRow(rows.progress, PROGRESS_LEN);
   updateDisplay({
     status: "recognized",
