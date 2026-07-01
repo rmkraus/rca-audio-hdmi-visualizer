@@ -15,8 +15,8 @@
   --muted: #b8c1cf;
   --border: rgba(255,255,255,0.08);
   --shadow: rgba(0,0,0,0.45);
-  --time-colon-tab: clamp(44px, 4.8vw, 92px);
-  --time-slash-tab: clamp(86px, 9vw, 172px);
+  --time-colon-tab: clamp(90px, 9vw, 180px);
+  --time-slash-tab: clamp(160px, 16vw, 320px);
 }
 * { box-sizing: border-box; }
 html, body {
@@ -150,9 +150,7 @@ html, body {
   display: grid;
   grid-template-columns:
     minmax(0, 2fr) var(--time-colon-tab)
-    minmax(0, 2fr) var(--time-colon-tab)
     minmax(0, 2fr) var(--time-slash-tab)
-    minmax(0, 2fr) var(--time-colon-tab)
     minmax(0, 2fr) var(--time-colon-tab)
     minmax(0, 2fr);
   gap: 0;
@@ -340,11 +338,9 @@ html, body {
   .time-display-frame {
     grid-template-columns:
       minmax(0, 2fr) var(--time-colon-tab)
-      minmax(0, 2fr) var(--time-colon-tab)
       minmax(0, 2fr) var(--time-slash-tab)
-      minmax(0, 2fr) var(--time-colon-tab)
       minmax(0, 2fr) var(--time-colon-tab)
       minmax(0, 2fr);
   }
-  :root { --time-colon-tab: clamp(22px, 5vw, 44px); --time-slash-tab: clamp(42px, 9vw, 78px); }
+  :root { --time-colon-tab: clamp(42px, 9vw, 84px); --time-slash-tab: clamp(72px, 16vw, 132px); }
 }

@@ -12,10 +12,8 @@ const rows = {
   artist: { el: document.getElementById("line-artist"), tiles: [], tokens: [], charset: TEXT_CHARS },
   record: { el: document.getElementById("line-record"), tiles: [], tokens: [], charset: TEXT_CHARS },
   progress: { el: document.getElementById("line-progress"), tiles: [], tokens: [], charset: TEXT_CHARS },
-  currentHh: { el: document.getElementById("time-current-hh"), tiles: [], tokens: [], charset: DIGIT_CHARS },
   currentMm: { el: document.getElementById("time-current-mm"), tiles: [], tokens: [], charset: DIGIT_CHARS },
   currentSs: { el: document.getElementById("time-current-ss"), tiles: [], tokens: [], charset: DIGIT_CHARS },
-  totalHh: { el: document.getElementById("time-total-hh"), tiles: [], tokens: [], charset: DIGIT_CHARS },
   totalMm: { el: document.getElementById("time-total-mm"), tiles: [], tokens: [], charset: DIGIT_CHARS },
   totalSs: { el: document.getElementById("time-total-ss"), tiles: [], tokens: [], charset: DIGIT_CHARS },
 };
@@ -142,11 +140,9 @@ function progress(data) {
 
 function timeParts(seconds) {
   seconds = Math.max(0, Math.floor(Number(seconds) || 0));
-  const hh = Math.floor(seconds / 3600);
-  const mm = Math.floor((seconds % 3600) / 60);
+  const mm = Math.floor(seconds / 60);
   const ss = seconds % 60;
   return {
-    hh: String(hh).padStart(2, "0").slice(-2),
     mm: String(mm).padStart(2, "0"),
     ss: String(ss).padStart(2, "0"),
   };
@@ -154,10 +150,8 @@ function timeParts(seconds) {
 
 function setTimeRow(p) {
   if (!p) {
-    setRow(rows.currentHh, "00", 2);
     setRow(rows.currentMm, "00", 2);
     setRow(rows.currentSs, "00", 2);
-    setRow(rows.totalHh, "00", 2);
     setRow(rows.totalMm, "00", 2);
     setRow(rows.totalSs, "00", 2);
     document.querySelector(".time-display-frame").dataset.active = "0";
@@ -165,10 +159,8 @@ function setTimeRow(p) {
   }
   const current = timeParts(p.current);
   const total = timeParts(p.total);
-  setRow(rows.currentHh, current.hh, 2);
   setRow(rows.currentMm, current.mm, 2);
   setRow(rows.currentSs, current.ss, 2);
-  setRow(rows.totalHh, total.hh, 2);
   setRow(rows.totalMm, total.mm, 2);
   setRow(rows.totalSs, total.ss, 2);
   document.querySelector(".time-display-frame").dataset.active = "1";
@@ -222,10 +214,8 @@ function init() {
   buildRow(rows.track);
   buildRow(rows.artist);
   buildRow(rows.record);
-  buildRow(rows.currentHh, 2, "digits");
   buildRow(rows.currentMm, 2, "digits");
   buildRow(rows.currentSs, 2, "digits");
-  buildRow(rows.totalHh, 2, "digits");
   buildRow(rows.totalMm, 2, "digits");
   buildRow(rows.totalSs, 2, "digits");
   buildRow(rows.progress, PROGRESS_LEN);
