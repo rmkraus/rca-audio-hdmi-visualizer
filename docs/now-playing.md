@@ -50,7 +50,9 @@ RECOGNITION_MIN_RMS=150
 RECOGNITION_SILENCE_WINDOWS_TO_STOP=3
 RECOGNITION_NO_MATCH_LIMIT=3
 RECOGNITION_NO_MATCH_BACKOFF_SECONDS=30
-RECOGNITION_PROGRESS_RESUME_PERCENT=95
+RECOGNITION_PROGRESS_RESUME_PERCENT=100
+RECOGNITION_MAX_RECHECK_WAIT_SECONDS=150
+RECOGNITION_MISSING_DURATION_RECHECK_SECONDS=60
 RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS=5
 ```
 
@@ -63,7 +65,11 @@ Meaning:
 - one good audio window switches `playback_status` back to `playing`
 - while playing, send above-threshold samples to Shazam
 - on a match, look up the iTunes track length, show the estimated progress bar,
-  and wait until the progress estimate reaches 95% before checking again
+  and wait until the progress estimate reaches 100% before checking again
+- never wait more than 150 seconds between checks, even when the current track is
+  longer than that
+- if track length is unavailable, hide the progress bar and check again after 60
+  seconds
 - on no match, check the next sample immediately
 - after 3 consecutive no-match samples, pause for 30 seconds
 

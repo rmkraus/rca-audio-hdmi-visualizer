@@ -294,12 +294,15 @@ def progress_start_seconds(result, padding_seconds):
         return None
 
 
-def sleep_until_progress(result, target_percent):
+def sleep_until_progress(result, target_percent, missing_duration_sleep=60, max_wait=150):
     if not result.track_duration_ms or result.progress_start_seconds is None:
-        return 0
+        return int(missing_duration_sleep)
     track_seconds = float(result.track_duration_ms) / 1000.0
     target_seconds = track_seconds * (float(target_percent) / 100.0)
-    return max(0, int(round(target_seconds - float(result.progress_start_seconds))))
+    sleep_for = max(0, int(round(target_seconds - float(result.progress_start_seconds))))
+    if max_wait and max_wait > 0:
+        sleep_for = min(sleep_for, int(max_wait))
+    return sleep_for
 
 
 def identify_once(config):
@@ -341,7 +344,9 @@ def daemon(config):
     silence_limit = config.int("RECOGNITION_SILENCE_WINDOWS_TO_STOP", 3)
     no_match_limit = config.int("RECOGNITION_NO_MATCH_LIMIT", 3)
     no_match_backoff = config.int("RECOGNITION_NO_MATCH_BACKOFF_SECONDS", 30)
-    progress_resume_percent = config.float("RECOGNITION_PROGRESS_RESUME_PERCENT", 95.0)
+    progress_resume_percent = config.float("RECOGNITION_PROGRESS_RESUME_PERCENT", 100.0)
+    max_recheck_wait = config.int("RECOGNITION_MAX_RECHECK_WAIT_SECONDS", 150)
+    missing_duration_recheck = config.int("RECOGNITION_MISSING_DURATION_RECHECK_SECONDS", 60)
     progress_padding = config.float("RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS", 5.0)
 
     silence_count = 0
@@ -417,7 +422,12 @@ def daemon(config):
                         result.progress_start_seconds = progress_start_seconds(result, progress_padding)
                         write_state(state_path, result)
                         last_display_result = result
-                        sleep_for = sleep_until_progress(result, progress_resume_percent)
+                        sleep_for = sleep_until_progress(
+                            result,
+                            progress_resume_percent,
+                            missing_duration_sleep=missing_duration_recheck,
+                            max_wait=max_recheck_wait,
+                        )
                     elif result.status in {"no_match", "error"}:
                         no_match_count += 1
                         # Bad Shazam responses should not leave stale track data
