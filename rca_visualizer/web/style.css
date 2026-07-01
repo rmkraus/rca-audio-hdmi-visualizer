@@ -140,3 +140,24 @@ html, body {
   .display { grid-template-columns: repeat(24, minmax(0, 1fr)); }
   .char { font-size: clamp(14px, 3vw, 30px); }
 }
+
+.tile[data-row="line-progress"] .char {
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: clamp(18px, 2.4vw, 42px);
+}
+.tile[data-progress="filled"] .char {
+  color: #35f06f;
+  text-shadow: 0 0 8px rgba(53,240,111,0.55);
+}
+.tile[data-progress="filled"] .top,
+.tile[data-progress="filled"] .bottom {
+  background: linear-gradient(180deg, rgba(53,240,111,0.12), rgba(53,240,111,0.03)), var(--panel-bottom);
+}
+.tile[data-progress="empty"] .char {
+  color: #e9edf2;
+  opacity: 0.9;
+}
+.tile[data-progress="empty"] .top,
+.tile[data-progress="empty"] .bottom {
+  background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)), var(--panel);
+}

@@ -1,9 +1,11 @@
 const DISPLAY_LEN = 32;
 const PROGRESS_LEN = 16;
+const PROGRESS_FILLED = "█";
+const PROGRESS_EMPTY = "░";
 const STEP_MS = 28;
 const TILE_STAGGER_MS = 18;
-const CHARS = Array.from(" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/:.'&,()[]!?").concat([
-  "🎵", "👤", "💿", "🟩", "⬜"
+const CHARS = Array.from(" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/:.'&,()[]!?█░").concat([
+  "🎵", "👤", "💿"
 ]);
 
 const rows = {
@@ -23,9 +25,10 @@ function normalizeText(text, len = DISPLAY_LEN) {
   return tokens.slice(0, len);
 }
 
-function makeTile(ch) {
+function makeTile(ch, rowName = "") {
   const tile = document.createElement("div");
   tile.className = "tile";
+  if (rowName) tile.dataset.row = rowName;
   tile.dataset.char = ch;
   tile.dataset.busy = "0";
   tile.innerHTML = `
@@ -43,6 +46,7 @@ function setTileChar(tile, ch) {
   tile.querySelector(".top .char").textContent = ch;
   tile.querySelector(".bottom .char").textContent = ch;
   tile.dataset.char = ch;
+  tile.dataset.progress = ch === PROGRESS_FILLED ? "filled" : (ch === PROGRESS_EMPTY ? "empty" : "");
 }
 
 function pulseTile(tile) {
@@ -96,7 +100,7 @@ function buildRow(row, len = DISPLAY_LEN) {
   row.el.innerHTML = "";
   row.tiles = [];
   for (let i = 0; i < len; i++) {
-    const tile = makeTile(" ");
+    const tile = makeTile(" ", row.el.id || "");
     row.el.appendChild(tile);
     row.tiles.push(tile);
   }
@@ -157,7 +161,7 @@ function updateDisplay(data) {
     setRow(rows.progress, "", PROGRESS_LEN);
   } else {
     const filled = Math.max(0, Math.min(PROGRESS_LEN, Math.round(p.ratio * PROGRESS_LEN)));
-    setRow(rows.progress, "🟩".repeat(filled) + "⬜".repeat(PROGRESS_LEN - filled), PROGRESS_LEN);
+    setRow(rows.progress, PROGRESS_FILLED.repeat(filled) + PROGRESS_EMPTY.repeat(PROGRESS_LEN - filled), PROGRESS_LEN);
   }
   updateStats(data);
 }
