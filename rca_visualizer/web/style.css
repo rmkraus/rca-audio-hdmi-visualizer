@@ -15,8 +15,10 @@
   --muted: #b8c1cf;
   --border: rgba(255,255,255,0.08);
   --shadow: rgba(0,0,0,0.45);
-  --time-colon-tab: clamp(90px, 9vw, 180px);
-  --time-slash-tab: clamp(160px, 16vw, 320px);
+  --time-row-height: clamp(54px, 6.8vh, 76px);
+  --time-digit-group: clamp(74px, 6.2vw, 118px);
+  --time-colon-tab: clamp(42px, 4vw, 76px);
+  --time-slash-tab: clamp(72px, 7vw, 132px);
 }
 * { box-sizing: border-box; }
 html, body {
@@ -149,12 +151,14 @@ html, body {
 .time-display-frame {
   display: grid;
   grid-template-columns:
-    minmax(0, 2fr) var(--time-colon-tab)
-    minmax(0, 2fr) var(--time-slash-tab)
-    minmax(0, 2fr) var(--time-colon-tab)
-    minmax(0, 2fr);
+    var(--time-digit-group) var(--time-colon-tab)
+    var(--time-digit-group) var(--time-slash-tab)
+    var(--time-digit-group) var(--time-colon-tab)
+    var(--time-digit-group);
   gap: 0;
   align-items: stretch;
+  justify-content: center;
+  height: var(--time-row-height);
   padding: 8px;
   border: 3px solid #000;
   border-radius: 2px;
@@ -173,10 +177,17 @@ html, body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0;
+  min-width: 0;
+  height: 100%;
+}
+.time-display .tile {
+  aspect-ratio: auto;
+  min-height: 0;
+  height: 100%;
 }
 .time-display .tile .char {
   font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
-  font-size: clamp(16px, 2.1vw, 38px);
+  font-size: clamp(16px, 3.5vh, 34px);
 }
 .metal-separator {
   width: 100%;
@@ -337,10 +348,15 @@ html, body {
   .char { font-size: clamp(14px, 3vw, 30px); }
   .time-display-frame {
     grid-template-columns:
-      minmax(0, 2fr) var(--time-colon-tab)
-      minmax(0, 2fr) var(--time-slash-tab)
-      minmax(0, 2fr) var(--time-colon-tab)
-      minmax(0, 2fr);
+      var(--time-digit-group) var(--time-colon-tab)
+      var(--time-digit-group) var(--time-slash-tab)
+      var(--time-digit-group) var(--time-colon-tab)
+      var(--time-digit-group);
   }
-  :root { --time-colon-tab: clamp(42px, 9vw, 84px); --time-slash-tab: clamp(72px, 16vw, 132px); }
+  :root {
+    --time-row-height: clamp(46px, 8vh, 62px);
+    --time-digit-group: clamp(54px, 13vw, 82px);
+    --time-colon-tab: clamp(26px, 6vw, 42px);
+    --time-slash-tab: clamp(44px, 10vw, 70px);
+  }
 }
