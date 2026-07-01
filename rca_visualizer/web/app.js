@@ -18,6 +18,8 @@ const runtimeConfig = {
 };
 
 let lastState = { status: "waiting" };
+let signLightOn = false;
+let signLightTimer = null;
 
 function tokenize(text) {
   return Array.from(String(text || "").replaceAll("️", ""));
@@ -210,11 +212,38 @@ function updateStats(data) {
     `Status: ${statusParts(data)} | RMS: ${rms} | Silence Threshold: ${threshold} | Shazam Requests: ${total} reqs, ${rpm.toFixed(1)} reqs/m`;
 }
 
+function audioLooksActive(data) {
+  return !(
+    data.playback_status === "stopped" ||
+    data.status === "stopped" ||
+    data.status === "silence"
+  );
+}
+
+function updateSignLighting(data) {
+  const shouldLight = audioLooksActive(data);
+  if (shouldLight === signLightOn) return;
+  signLightOn = shouldLight;
+  if (signLightTimer) {
+    clearTimeout(signLightTimer);
+    signLightTimer = null;
+  }
+  if (shouldLight) {
+    document.body.dataset.signLight = "warming";
+    signLightTimer = setTimeout(() => {
+      if (signLightOn) document.body.dataset.signLight = "on";
+    }, 980);
+  } else {
+    document.body.dataset.signLight = "off";
+  }
+}
+
 function updateDisplay(data) {
   lastState = data;
   const good = data.status === "recognized";
   document.body.dataset.playback = data.playback_status === "stopped" || data.status === "stopped" ? "stopped" : "playing";
   document.body.dataset.listening = data.listening || data.status === "listening" ? "true" : "false";
+  updateSignLighting(data);
   setWrappedText(rows.track, rows.track2, good ? `${data.title || ""}` : "");
   setRow(rows.artist, good ? `${data.artist || ""}` : "");
   setRow(rows.record, good ? `${data.album || ""}` : "");
