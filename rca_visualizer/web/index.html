@@ -10,12 +10,13 @@
   <div id="stats" class="stats">Status: Waiting | Shazam Requests: 0 reqs, 0 reqs/m</div>
   <main class="app">
     <section class="board" aria-label="Now playing split-flap display">
+      <div class="screw screw-tl" aria-hidden="true"></div>
+      <div class="screw screw-tr" aria-hidden="true"></div>
+      <div class="screw screw-bl" aria-hidden="true"></div>
+      <div class="screw screw-br" aria-hidden="true"></div>
+
       <div class="display-row">
-        <div class="row-label" aria-label="Track">
-          <svg class="label-icon" viewBox="0 0 512 512" aria-hidden="true">
-            <path d="M499.1 6.3c8.1 6.1 12.9 15.6 12.9 25.7v320c0 35.3-43 64-96 64s-96-28.7-96-64 43-64 96-64c17.7 0 34.2 3.2 48 8.8V131.8L192 190.1V416c0 35.3-43 64-96 64S0 451.3 0 416s43-64 96-64c17.7 0 34.2 3.2 48 8.8V160c0-15.1 10.5-28.2 25.3-31.4l304-64c9.9-2.1 20.4.2 28.5 6.3z"/>
-          </svg>
-        </div>
+        <div class="row-label" aria-label="Track"></div>
         <div id="line-track" class="display line"></div>
       </div>
       <div class="display-row title-continuation-row">
@@ -23,19 +24,11 @@
         <div id="line-track-2" class="display line"></div>
       </div>
       <div class="display-row">
-        <div class="row-label" aria-label="Artist">
-          <svg class="label-icon" viewBox="0 0 448 512" aria-hidden="true">
-            <path d="M224 256A128 128 0 1 0 224 0a128 128 0 1 0 0 256zm-45.7 48C79.8 304 0 383.8 0 482.3 0 498.7 13.3 512 29.7 512h388.6c16.4 0 29.7-13.3 29.7-29.7C448 383.8 368.2 304 269.7 304h-91.4z"/>
-          </svg>
-        </div>
+        <div class="row-label" aria-label="Artist"></div>
         <div id="line-artist" class="display line"></div>
       </div>
       <div class="display-row">
-        <div class="row-label" aria-label="Record">
-          <svg class="label-icon" viewBox="0 0 512 512" aria-hidden="true">
-            <path d="M256 8a248 248 0 1 0 0 496 248 248 0 1 0 0-496zm0 152a96 96 0 1 1 0 192 96 96 0 1 1 0-192zm0 128a32 32 0 1 0 0-64 32 32 0 1 0 0 64z"/>
-          </svg>
-        </div>
+        <div class="row-label" aria-label="Record"></div>
         <div id="line-record" class="display line"></div>
       </div>
       <div class="display-row time-row">
@@ -53,6 +46,26 @@
       <div class="display-row progress-row">
         <div class="row-label progress-label" aria-label="Progress"></div>
         <div id="line-progress" class="bulb-progress" aria-label="Track progress"></div>
+      </div>
+
+      <div class="controls" aria-label="Appliance controls">
+        <div class="power-control">
+          <div class="control-label">POWER</div>
+          <div class="metal-button" aria-hidden="true"></div>
+        </div>
+        <div class="transport-control">
+          <div class="control-label status-label">STATUS</div>
+          <div class="transport-lights">
+            <div class="lamp-stack">
+              <div id="status-play" class="lamp play" aria-hidden="true"></div>
+              <div class="control-label small">PLAY</div>
+            </div>
+            <div class="lamp-stack">
+              <div id="status-stop" class="lamp stop" aria-hidden="true"></div>
+              <div class="control-label small">STOP</div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   </main>
