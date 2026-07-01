@@ -1,5 +1,5 @@
 const DISPLAY_LEN = 32;
-const PROGRESS_LEN = 16;
+const PROGRESS_LEN = DISPLAY_LEN;
 const PROGRESS_FILLED = "█";
 const PROGRESS_EMPTY = "░";
 const STEP_MS = 28;
