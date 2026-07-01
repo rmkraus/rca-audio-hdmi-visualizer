@@ -162,9 +162,23 @@ function setWrappedText(firstRow, secondRow, text) {
 function setProgressBulbs(row, ratio) {
   const progress = Math.max(0, Math.min(1, Number(ratio) || 0));
   const scaled = progress * row.tiles.length;
+  const rampWidth = 5;
+  const warmAhead = 2;
   row.tiles.forEach((bulb, i) => {
-    const glow = Math.max(0, Math.min(1, scaled - i));
-    bulb.style.setProperty("--glow", glow.toFixed(3));
+    const distance = scaled - i;
+    let glow = 0;
+    if (distance >= rampWidth) {
+      glow = 1;
+    } else if (distance > 0) {
+      // Fade the leading edge across several bulbs instead of a single
+      // partially-lit bulb, like incandescent lamps warming up in sequence.
+      glow = 0.18 + 0.82 * (distance / rampWidth);
+    } else if (distance > -warmAhead) {
+      // A very faint pre-glow just ahead of the current position keeps the
+      // transition from looking like a hard digital boundary.
+      glow = 0.10 * (1 + distance / warmAhead);
+    }
+    bulb.style.setProperty("--glow", Math.max(0, Math.min(1, glow)).toFixed(3));
   });
 }
 
