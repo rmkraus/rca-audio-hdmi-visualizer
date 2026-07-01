@@ -423,7 +423,7 @@ body::after {
 .controls {
   position: absolute;
   left: 120px;
-  right: 230px;
+  right: 120px;
   bottom: 42px;
   z-index: 2;
   display: flex;
@@ -556,7 +556,7 @@ body[data-listening="true"] .lamp.listening {
   .board { padding-left: 48px; padding-right: 48px; }
   .display-row { width: 76%; }
   .time-display-frame { width: 100%; }
-  .controls { left: 82px; right: 150px; }
+  .controls { left: 82px; right: 82px; }
 }
 
 @media (max-width: 900px) {
@@ -567,7 +567,7 @@ body[data-listening="true"] .lamp.listening {
   .tile { min-height: 32px; }
   .char { font-size: clamp(13px, 3vw, 24px); }
   .bulb-progress { gap: 3px; padding: 7px; }
-  .controls { left: 52px; right: 90px; bottom: 34px; }
+  .controls { left: 52px; right: 52px; bottom: 34px; }
   :root {
     --time-row-height: 54px;
     --time-digit-group: clamp(54px, 13vw, 72px);
