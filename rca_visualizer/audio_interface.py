@@ -118,12 +118,21 @@ class AudioInterface(object):
     def start(self):
         if self._thread and self._thread.is_alive():
             return
-        self._stop_event.clear()
-        self._error = None
+        with self._condition:
+            self._stop_event.clear()
+            self._error = None
+            self._chunks.clear()
+            self._preroll.clear()
+            self._events.clear()
+            self._consecutive_audio = 0.0
+            self._consecutive_silence = 0.0
+            self._is_audio_active = False
+            self.audio_started.clear()
+            self.audio_stopped.set()
         self._process = subprocess.Popen(
             self.parec_cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             bufsize=0,
         )
         self._thread = threading.Thread(target=self._reader_loop)
@@ -144,6 +153,9 @@ class AudioInterface(object):
             self._condition.notify_all()
         if self._thread:
             self._thread.join(timeout=5)
+        with self._condition:
+            self._thread = None
+            self._process = None
 
     def _reader_loop(self):
         try:
@@ -153,18 +165,12 @@ class AudioInterface(object):
                     raise RuntimeError("audio stream stdout is unavailable")
                 data = stdout.read(self.chunk_bytes)
                 if not data:
-                    stderr = b""
-                    try:
-                        stderr_pipe = self._process.stderr
-                        stderr = stderr_pipe.read() if stderr_pipe is not None else b""
-                    except Exception:
-                        pass
-                    raise RuntimeError((stderr.decode("utf-8", "replace").strip() or "audio stream ended"))
+                    raise RuntimeError("audio stream ended")
                 duration = float(len(data)) / float(self.bytes_per_second or 1)
                 rms = audioop.rms(data, SAMPLE_WIDTH_BYTES)
                 chunk = AudioChunk(data, rms, time.time(), duration)
-                self._update_activity(rms, duration)
                 with self._condition:
+                    self._update_activity_locked(rms, duration)
                     self._chunks.append(chunk)
                     self._preroll.append(chunk)
                     while len(self._chunks) > self.max_chunks:
@@ -173,15 +179,15 @@ class AudioInterface(object):
                         self._preroll.popleft()
                     self._condition.notify_all()
         except Exception as exc:
-            self._error = exc
             with self._condition:
+                self._error = exc
                 self._condition.notify_all()
 
-    def _emit_event(self, kind, rms, gate_seconds):
+    def _emit_event_locked(self, kind, rms, gate_seconds):
         event = AudioActivityEvent(kind, time.time(), rms, gate_seconds)
         self._events.append(event)
 
-    def _update_activity(self, rms, duration):
+    def _update_activity_locked(self, rms, duration):
         if float(rms) >= self.min_rms:
             self._consecutive_audio += duration
             self._consecutive_silence = 0.0
@@ -189,7 +195,7 @@ class AudioInterface(object):
                 self._is_audio_active = True
                 self.audio_started.set()
                 self.audio_stopped.clear()
-                self._emit_event("started", rms, self.start_gate_seconds)
+                self._emit_event_locked("started", rms, self.start_gate_seconds)
         else:
             self._consecutive_silence += duration
             self._consecutive_audio = 0.0
@@ -197,7 +203,13 @@ class AudioInterface(object):
                 self._is_audio_active = False
                 self.audio_stopped.set()
                 self.audio_started.clear()
-                self._emit_event("stopped", rms, self.stop_gate_seconds)
+                self._emit_event_locked("stopped", rms, self.stop_gate_seconds)
+
+    # Backward-compatible test hook. Production updates are condition-locked.
+    def _update_activity(self, rms, duration):
+        with self._condition:
+            self._update_activity_locked(rms, duration)
+            self._condition.notify_all()
 
     def raise_if_failed(self):
         if self._error is not None:
@@ -230,9 +242,8 @@ class AudioInterface(object):
         with self._condition:
             while True:
                 self.raise_if_failed()
-                for index, event in enumerate(self._events):
+                for index, event in enumerate(list(self._events)):
                     if kinds is None or event.kind in kinds:
-                        # deque has no pop(index); rotate to remove exactly one.
                         self._events.rotate(-index)
                         found = self._events.popleft()
                         self._events.rotate(index)

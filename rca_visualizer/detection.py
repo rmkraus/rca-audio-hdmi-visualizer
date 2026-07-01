@@ -15,6 +15,7 @@ from .defaults import (
     DEFAULT_MISSING_DURATION_RECHECK_SECONDS,
     DEFAULT_NO_MATCH_BACKOFF_SECONDS,
     DEFAULT_NO_MATCH_LIMIT,
+    DEFAULT_MIN_RECHECK_WAIT_SECONDS,
     DEFAULT_PROGRESS_OFFSET_PADDING_SECONDS,
     DEFAULT_PROGRESS_RESUME_PERCENT,
     DEFAULT_RATELIMIT_BACKOFF_SECONDS,
@@ -69,14 +70,18 @@ class DetectionLoop(object):
             "RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS",
             DEFAULT_PROGRESS_OFFSET_PADDING_SECONDS,
         )
+        self.min_recheck_wait = config.int("RECOGNITION_MIN_RECHECK_WAIT_SECONDS", DEFAULT_MIN_RECHECK_WAIT_SECONDS)
         self.audio_gate_seconds = config.float("RECOGNITION_AUDIO_GATE_SECONDS", DEFAULT_AUDIO_GATE_SECONDS)
+        legacy_gate_present = hasattr(config, "values") and "RECOGNITION_AUDIO_GATE_SECONDS" in config.values
+        start_gate_default = self.audio_gate_seconds if legacy_gate_present else DEFAULT_AUDIO_START_GATE_SECONDS
+        stop_gate_default = self.audio_gate_seconds if legacy_gate_present else DEFAULT_AUDIO_STOP_GATE_SECONDS
         self.audio_start_gate_seconds = config.float(
             "RECOGNITION_AUDIO_START_GATE_SECONDS",
-            DEFAULT_AUDIO_START_GATE_SECONDS,
+            start_gate_default,
         )
         self.audio_stop_gate_seconds = config.float(
             "RECOGNITION_AUDIO_STOP_GATE_SECONDS",
-            DEFAULT_AUDIO_STOP_GATE_SECONDS,
+            stop_gate_default,
         )
         self.audio_preroll_seconds = config.float("RECOGNITION_AUDIO_PREROLL_SECONDS", DEFAULT_AUDIO_PREROLL_SECONDS)
 
@@ -335,12 +340,13 @@ class DetectionLoop(object):
     def _playback_recheck_timeout(self, result):
         from .recognition import sleep_until_progress
 
-        return sleep_until_progress(
+        wait_for = sleep_until_progress(
             result,
             self.progress_resume_percent,
             missing_duration_sleep=self.missing_duration_recheck,
             max_wait=self.max_recheck_wait,
         )
+        return max(int(self.min_recheck_wait), int(wait_for))
 
     @staticmethod
     def _copy_display_result(base, status, playback_status, listening=False, backing_off=False, ratelimit=False, message=""):

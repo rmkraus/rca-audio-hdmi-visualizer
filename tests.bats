@@ -9,3 +9,8 @@
   run python3 -m compileall rca_visualizer
   [ "$status" -eq 0 ]
 }
+
+@test "audio detection unit tests pass" {
+  run python3 tests/test_audio_detection.py
+  [ "$status" -eq 0 ]
+}
