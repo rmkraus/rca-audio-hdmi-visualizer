@@ -427,7 +427,7 @@ body::after {
   bottom: 42px;
   z-index: 2;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: flex-end;
   pointer-events: none;
 }
@@ -449,26 +449,12 @@ body::after {
   font-size: 12px;
 }
 
-.metal-button,
 .lamp {
   border-radius: 999px;
 }
 
-.metal-button {
-  width: 46px;
-  height: 46px;
-  background:
-    radial-gradient(circle at 40% 35%, #554532 0%, #0e0c09 45%, #050504 70%),
-    linear-gradient(#665844, #0a0907);
-  box-shadow:
-    0 0 0 4px #060504,
-    0 0 0 7px #3a3327,
-    inset 0 2px 4px rgba(255,255,255,0.35),
-    0 5px 9px rgba(0,0,0,0.8);
-}
-
 .transport-control { text-align: center; }
-.transport-lights { display: flex; gap: 52px; align-items: flex-end; }
+.transport-lights { display: flex; gap: 44px; align-items: flex-end; }
 
 .lamp {
   width: 36px;
@@ -484,9 +470,10 @@ body::after {
   box-shadow:
     0 0 0 4px #050504,
     0 0 0 7px #332b20,
-    0 0 12px rgba(180,255,30,0.95),
-    0 0 28px rgba(120,255,20,0.38),
-    inset 0 2px 4px rgba(255,255,255,0.65);
+    0 0 20px rgba(200,255,40,1),
+    0 0 46px rgba(120,255,20,0.70),
+    0 0 84px rgba(120,255,20,0.26),
+    inset 0 2px 5px rgba(255,255,255,0.82);
 }
 
 .lamp.stop {
@@ -497,6 +484,17 @@ body::after {
     inset 0 2px 4px rgba(255,255,255,0.3),
     0 0 5px rgba(160,30,20,0.35);
   opacity: 0.72;
+}
+
+.lamp.listening {
+  background: radial-gradient(circle, #5ec9ff 0%, #176aa7 44%, #082036 82%);
+  box-shadow:
+    0 0 0 4px #050504,
+    0 0 0 7px #332b20,
+    inset 0 2px 4px rgba(255,255,255,0.28),
+    0 0 5px rgba(70,170,255,0.25);
+  opacity: 0.58;
+  filter: saturate(0.62) brightness(0.62);
 }
 
 body[data-playback="stopped"] .lamp.play {
@@ -512,8 +510,22 @@ body[data-playback="stopped"] .lamp.stop {
   box-shadow:
     0 0 0 4px #050504,
     0 0 0 7px #332b20,
-    0 0 10px rgba(190,45,25,0.65),
-    inset 0 2px 4px rgba(255,255,255,0.35);
+    0 0 20px rgba(255,72,38,0.95),
+    0 0 48px rgba(255,55,25,0.62),
+    0 0 82px rgba(255,45,20,0.24),
+    inset 0 2px 5px rgba(255,255,255,0.56);
+}
+
+body[data-listening="true"] .lamp.listening {
+  opacity: 1;
+  filter: none;
+  box-shadow:
+    0 0 0 4px #050504,
+    0 0 0 7px #332b20,
+    0 0 18px rgba(86,190,255,1),
+    0 0 42px rgba(40,150,255,0.62),
+    0 0 78px rgba(40,150,255,0.24),
+    inset 0 2px 5px rgba(255,255,255,0.70);
 }
 
 .screw {

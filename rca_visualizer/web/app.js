@@ -214,6 +214,7 @@ function updateStats(data) {
 function updateDisplay(data) {
   const good = data.status === "recognized";
   document.body.dataset.playback = data.playback_status === "stopped" || data.status === "stopped" ? "stopped" : "playing";
+  document.body.dataset.listening = data.listening || data.status === "listening" ? "true" : "false";
   setWrappedText(rows.track, rows.track2, good ? `${data.title || ""}` : "");
   setRow(rows.artist, good ? `${data.artist || ""}` : "");
   setRow(rows.record, good ? `${data.album || ""}` : "");
