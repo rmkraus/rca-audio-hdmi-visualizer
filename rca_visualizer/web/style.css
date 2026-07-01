@@ -122,7 +122,7 @@ body::after {
 }
 
 .display-row {
-  width: 68%;
+  width: 74%;
   display: grid;
   grid-template-columns: 0 1fr;
   gap: 0;
@@ -160,14 +160,14 @@ body::after {
 }
 
 .time-display-frame {
-  width: 68%;
+  width: 100%;
   display: grid;
   grid-template-columns:
     var(--time-digit-group) var(--time-colon-tab)
     var(--time-digit-group) var(--time-slash-tab)
     var(--time-digit-group) var(--time-colon-tab)
     var(--time-digit-group);
-  justify-content: center;
+  justify-content: start;
   align-items: stretch;
   height: var(--time-row-height);
   padding: 7px;
@@ -474,7 +474,8 @@ body[data-playback="stopped"] .lamp.stop {
 
 @media (max-width: 1100px) {
   .board { padding-left: 48px; padding-right: 48px; }
-  .display-row, .time-display-frame { width: 76%; }
+  .display-row { width: 76%; }
+  .time-display-frame { width: 100%; }
   .controls { left: 82px; right: 82px; }
 }
 
