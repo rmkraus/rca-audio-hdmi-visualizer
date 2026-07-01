@@ -10,8 +10,11 @@ import wave
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .audio_interface import AudioInterface
+from .metadata import empty_metadata
 from .config import RuntimeConfig
 from .defaults import (
+    DEFAULT_AUDIO_GATE_SECONDS,
     DEFAULT_CHANNELS,
     DEFAULT_MAX_RECHECK_WAIT_SECONDS,
     DEFAULT_MIN_RMS,
@@ -21,7 +24,6 @@ from .defaults import (
     DEFAULT_PROGRESS_OFFSET_PADDING_SECONDS,
     DEFAULT_PROGRESS_RESUME_PERCENT,
     DEFAULT_RATELIMIT_BACKOFF_SECONDS,
-    DEFAULT_RECOGNIZED_SILENCE_CHECK_GAP_SECONDS,
     DEFAULT_RATELIMIT_REQUESTS_PER_MIN,
     DEFAULT_SAMPLE_RATE,
     DEFAULT_SAMPLE_SECONDS,
@@ -86,7 +88,8 @@ class RecognitionResult:
         self.message = message
 
     def to_dict(self):
-        return {
+        metadata = empty_metadata(status=self.status, playback_status=self.playback_status)
+        metadata.update({
             "status": self.status,
             "playback_status": self.playback_status,
             "listening": self.listening,
@@ -110,7 +113,8 @@ class RecognitionResult:
             "progress_padding_seconds": self.progress_padding_seconds,
             "raw": self.raw,
             "message": self.message,
-        }
+        })
+        return metadata
 
 
 def now_iso():
@@ -430,6 +434,39 @@ def identify_once(config):
         return result
 
 
+def playback_recheck_timeout(result, progress_resume_percent, missing_duration_recheck, max_recheck_wait):
+    return sleep_until_progress(
+        result,
+        progress_resume_percent,
+        missing_duration_sleep=missing_duration_recheck,
+        max_wait=max_recheck_wait,
+    )
+
+
+def wait_for_playback_stop(audio, timeout_seconds):
+    if timeout_seconds is None:
+        return audio.wait_for_silence(timeout=None)
+    return audio.wait_for_silence(timeout=max(0, float(timeout_seconds)))
+
+
+def log_result(result):
+    print(
+        "%s/%s: %s - %s provider=%s score=%.3f rms=%s reqs=%s rpm=%.1f %s" % (
+            result.playback_status or "unknown",
+            result.status,
+            result.artist,
+            result.title,
+            result.provider,
+            result.score,
+            "%.1f" % result.rms if result.rms is not None else "",
+            result.shazam_request_count,
+            result.shazam_requests_per_min,
+            result.message,
+        ),
+        flush=True,
+    )
+
+
 def daemon(config):
     state_path = Path(config.str("NOW_PLAYING_STATE", DEFAULT_STATE_PATH))
     enabled = config.bool("RECOGNITION_ENABLED", False)
@@ -443,69 +480,76 @@ def daemon(config):
     max_recheck_wait = config.int("RECOGNITION_MAX_RECHECK_WAIT_SECONDS", DEFAULT_MAX_RECHECK_WAIT_SECONDS)
     missing_duration_recheck = config.int("RECOGNITION_MISSING_DURATION_RECHECK_SECONDS", DEFAULT_MISSING_DURATION_RECHECK_SECONDS)
     progress_padding = config.float("RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS", DEFAULT_PROGRESS_OFFSET_PADDING_SECONDS)
-    recognized_silence_gap = config.int(
-        "RECOGNITION_RECOGNIZED_SILENCE_CHECK_GAP_SECONDS",
-        DEFAULT_RECOGNIZED_SILENCE_CHECK_GAP_SECONDS,
-    )
+    audio_gate_seconds = config.float("RECOGNITION_AUDIO_GATE_SECONDS", DEFAULT_AUDIO_GATE_SECONDS)
 
-    no_match_count = 0
-    playback_status = "stopped"
-    last_display_result = RecognitionResult(status="waiting", playback_status=playback_status)
     shazam_request_count = 0
     shazam_request_times = []
+    last_display_result = RecognitionResult(status="stopped", playback_status="stopped")
 
     if not enabled:
         print("Recognition disabled. Set RECOGNITION_ENABLED=true to enable.", flush=True)
         while True:
             time.sleep(3600)
 
-    while True:
-        sleep_for = 0
-        try:
-            # During scheduled/forced rechecks, keep the recognized status and
-            # existing progress fields on screen while the new sample records.
-            # The UI still shows "Listening" from the flag below, but the timer
-            # can keep advancing from the prior recognized_at/progress state.
-            listening_status = "recognized" if last_display_result.status == "recognized" else "listening"
-            listening_result = copy_display_result(
-                last_display_result,
-                status=listening_status,
-                playback_status=playback_status,
-                listening=True,
-                message="recording %s second sample" % sample_seconds,
+    audio = AudioInterface.from_config(config, min_rms=min_rms, gate_seconds=audio_gate_seconds)
+    audio.start()
+
+    try:
+        while True:
+            stopped = RecognitionResult(
+                status="stopped",
+                playback_status="stopped",
+                recognized_at=now_iso(),
+                message="waiting for %.1f seconds of audio" % audio_gate_seconds,
             )
-            set_metrics(listening_result, shazam_request_count, request_rate(shazam_request_times))
-            write_state(state_path, listening_result)
+            set_metrics(stopped, shazam_request_count, request_rate(shazam_request_times))
+            write_state(state_path, stopped)
+            last_display_result = stopped
+            audio.wait_for_audio()
+            audio.clear_buffer()
 
-            with tempfile.TemporaryDirectory(prefix="rca-recognition-") as tmpdir:
-                sample = Path(tmpdir) / "sample.wav"
-                record_sample(config, sample, sample_seconds)
-                rms, duration = wav_stats(sample)
+            no_match_count = 0
+            playback_status = "playing"
+            while True:
+                listening_status = "recognized" if last_display_result.status == "recognized" else "listening"
+                listening_result = copy_display_result(
+                    last_display_result,
+                    status=listening_status,
+                    playback_status=playback_status,
+                    listening=True,
+                    message="recording %s second sample" % sample_seconds,
+                )
+                set_metrics(listening_result, shazam_request_count, request_rate(shazam_request_times))
+                write_state(state_path, listening_result)
 
-                if rms < min_rms:
-                    no_match_count = 0
-                    playback_status = "stopped"
-                    result = RecognitionResult(
-                        status="stopped",
-                        playback_status="stopped",
-                        recognized_at=now_iso(),
-                        duration=duration,
-                        rms=rms,
-                        message="stopped after quiet sample; RMS %.1f below threshold %.1f"
-                        % (rms, min_rms),
-                    )
-                    set_metrics(result, shazam_request_count, request_rate(shazam_request_times))
-                    write_state(state_path, result)
-                    last_display_result = result
-                else:
-                    playback_status = "playing"
-                    shazam_request_count += 1
-                    shazam_request_times.append(time.time())
-                    result = identify_with_shazam(sample)
-                    result.duration = duration
-                    result.rms = rms
-                    result.playback_status = playback_status
-                    set_metrics(result, shazam_request_count, request_rate(shazam_request_times))
+                try:
+                    with tempfile.TemporaryDirectory(prefix="rca-recognition-") as tmpdir:
+                        sample = Path(tmpdir) / "sample.wav"
+                        audio.record_wav(sample_seconds, sample)
+                        rms, duration = wav_stats(sample)
+                        if rms < min_rms:
+                            result = RecognitionResult(
+                                status="stopped",
+                                playback_status="stopped",
+                                recognized_at=now_iso(),
+                                duration=duration,
+                                rms=rms,
+                                message="stopped after quiet sample; RMS %.1f below threshold %.1f" % (rms, min_rms),
+                            )
+                            set_metrics(result, shazam_request_count, request_rate(shazam_request_times))
+                            write_state(state_path, result)
+                            last_display_result = result
+                            log_result(result)
+                            break
+
+                        shazam_request_count += 1
+                        shazam_request_times.append(time.time())
+                        result = identify_with_shazam(sample)
+                        result.duration = duration
+                        result.rms = rms
+                        result.playback_status = playback_status
+                        set_metrics(result, shazam_request_count, request_rate(shazam_request_times))
+
                     if result.shazam_requests_per_min > ratelimit_threshold:
                         result.status = "ratelimit"
                         result.ratelimit = True
@@ -518,43 +562,34 @@ def daemon(config):
                         )
                         write_state(state_path, result)
                         last_display_result = result
-                        sleep_for = ratelimit_backoff
+                        log_result(result)
+                        if wait_for_playback_stop(audio, ratelimit_backoff):
+                            break
                         no_match_count = 0
-                    elif result.status == "recognized":
+                        continue
+
+                    if result.status == "recognized":
                         no_match_count = 0
                         result.progress_padding_seconds = progress_padding
                         result.progress_start_seconds = progress_start_seconds(result, progress_padding)
                         write_state(state_path, result)
                         last_display_result = result
-                        wait_for_recheck = sleep_until_progress(
+                        log_result(result)
+                        timeout = playback_recheck_timeout(
                             result,
                             progress_resume_percent,
-                            missing_duration_sleep=missing_duration_recheck,
-                            max_wait=max_recheck_wait,
+                            missing_duration_recheck,
+                            max_recheck_wait,
                         )
-                        last_display_result = monitor_recognized_silence_wait(
-                            config,
-                            state_path,
-                            result,
-                            wait_for_recheck,
-                            sample_seconds,
-                            min_rms,
-                            recognized_silence_gap,
-                            shazam_request_count,
-                            shazam_request_times,
-                        )
-                        result = last_display_result
-                        playback_status = last_display_result.playback_status or playback_status
-                    elif result.status in {"no_match", "error"}:
+                        if wait_for_playback_stop(audio, timeout):
+                            break
+                        continue
+
+                    if result.status in {"no_match", "error"}:
                         no_match_count += 1
                         if last_display_result.status == "recognized":
-                            # A forced mid-track recheck can occasionally miss even while
-                            # the current song is still playing. Keep the visible song and
-                            # progress estimate instead of blinking the board blank; the
-                            # status line still reports the bad response/backoff.
-                            prior = last_display_result
                             kept = copy_display_result(
-                                prior,
+                                last_display_result,
                                 status="recognized",
                                 playback_status=playback_status,
                                 listening=False,
@@ -565,70 +600,59 @@ def daemon(config):
                             )
                             kept.duration = duration
                             kept.rms = rms
-                            if no_match_count >= no_match_limit:
-                                kept.message = "backing off for %s seconds after %s bad Shazam responses; keeping previous song on screen" % (
-                                    no_match_backoff,
-                                    no_match_limit,
-                                )
-                                sleep_for = no_match_backoff
-                                no_match_count = 0
                             set_metrics(kept, shazam_request_count, request_rate(shazam_request_times))
                             write_state(state_path, kept)
                             last_display_result = kept
+                            log_result(kept)
                         else:
-                            # Bad Shazam responses should not leave stale track data
-                            # on screen when there is no previous recognized track to keep.
                             clear_track_fields(result)
                             result.playback_status = playback_status
                             result.message = result.message or "bad Shazam response %s/%s" % (no_match_count, no_match_limit)
-                            if no_match_count >= no_match_limit:
-                                result.status = "backing_off"
-                                result.backing_off = True
-                                result.message = "backing off for %s seconds after %s bad Shazam responses" % (
-                                    no_match_backoff,
-                                    no_match_limit,
-                                )
-                                sleep_for = no_match_backoff
-                                no_match_count = 0
+                            set_metrics(result, shazam_request_count, request_rate(shazam_request_times))
                             write_state(state_path, result)
                             last_display_result = result
-                    else:
-                        clear_track_fields(result)
-                        result.backing_off = True
-                        write_state(state_path, result)
-                        last_display_result = result
-                        sleep_for = no_match_backoff
+                            log_result(result)
 
-            print(
-                "%s/%s: %s - %s provider=%s score=%.3f rms=%s reqs=%s rpm=%.1f %s" % (
-                    result.playback_status or "unknown",
-                    result.status,
-                    result.artist,
-                    result.title,
-                    result.provider,
-                    result.score,
-                    "%.1f" % result.rms if result.rms is not None else "",
-                    result.shazam_request_count,
-                    result.shazam_requests_per_min,
-                    result.message,
-                ),
-                flush=True,
+                        if no_match_count >= no_match_limit:
+                            last_display_result.backing_off = True
+                            last_display_result.message = "backing off for %s seconds after %s bad Shazam responses" % (
+                                no_match_backoff,
+                                no_match_limit,
+                            )
+                            set_metrics(last_display_result, shazam_request_count, request_rate(shazam_request_times))
+                            write_state(state_path, last_display_result)
+                            no_match_count = 0
+                            if wait_for_playback_stop(audio, no_match_backoff):
+                                break
+                        continue
+
+                    clear_track_fields(result)
+                    result.backing_off = True
+                    write_state(state_path, result)
+                    last_display_result = result
+                    log_result(result)
+                    if wait_for_playback_stop(audio, no_match_backoff):
+                        break
+                except Exception as exc:
+                    err = RecognitionResult(status="error", playback_status=playback_status, recognized_at=now_iso(), message=str(exc))
+                    set_metrics(err, shazam_request_count, request_rate(shazam_request_times))
+                    write_state(state_path, err)
+                    last_display_result = err
+                    print("recognition error: %s" % exc, file=sys.stderr, flush=True)
+                    if wait_for_playback_stop(audio, no_match_backoff):
+                        break
+
+            stopped = RecognitionResult(
+                status="stopped",
+                playback_status="stopped",
+                recognized_at=now_iso(),
+                message="stopped after %.1f seconds of silence" % audio_gate_seconds,
             )
-        except Exception as exc:
-            err = RecognitionResult(status="error", playback_status=playback_status, recognized_at=now_iso(), message=str(exc))
-            set_metrics(err, shazam_request_count, request_rate(shazam_request_times))
-            write_state(state_path, err)
-            last_display_result = err
-            print("recognition error: %s" % exc, file=sys.stderr, flush=True)
-            sleep_for = no_match_backoff
-        if sleep_for > 0:
-            if last_display_result.status in {"backing_off", "ratelimit", "error"}:
-                last_display_result.backing_off = True
-                if last_display_result.status == "ratelimit":
-                    last_display_result.ratelimit = True
-                set_metrics(last_display_result, shazam_request_count, request_rate(shazam_request_times))
-                write_state(state_path, last_display_result)
-            time.sleep(max(5, sleep_for))
+            set_metrics(stopped, shazam_request_count, request_rate(shazam_request_times))
+            write_state(state_path, stopped)
+            last_display_result = stopped
+    finally:
+        audio.stop()
 
 
 def main(argv=None):
