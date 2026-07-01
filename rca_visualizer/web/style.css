@@ -23,7 +23,7 @@ html, body {
 .app {
   width: 100vw;
   height: 100vh;
-  padding: 18px;
+  padding: 48px 18px 18px;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -39,11 +39,17 @@ html, body {
   gap: 10px;
 }
 .stats {
-  width: 100%;
-  min-height: 22px;
-  padding: 5px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.07);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  width: 100vw;
+  min-height: 28px;
+  padding: 8px 18px;
+  border-radius: 0;
+  border: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.09);
   background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01)), var(--frame);
   color: var(--muted);
   font-size: 10px;
