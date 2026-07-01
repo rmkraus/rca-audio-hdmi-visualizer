@@ -50,7 +50,7 @@ find_browser() {
 
 wait_for_session
 browser=$(find_browser)
-exec run_as_user "$browser" \
+run_as_user "$browser" \
   --kiosk \
   --noerrdialogs \
   --disable-infobars \
