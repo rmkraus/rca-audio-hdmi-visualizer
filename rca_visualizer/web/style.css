@@ -1,0 +1,142 @@
+:root {
+  --bg: #05080e;
+  --panel: #151b24;
+  --panel-top: #252c37;
+  --panel-bottom: #2f3846;
+  --text: #f2efe6;
+  --muted: #b8c1cf;
+  --border: rgba(255,255,255,0.08);
+  --shadow: rgba(0,0,0,0.45);
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(circle at top, #182133 0%, #0a111d 45%, #05080e 100%);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+}
+.stats {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  top: 10px;
+  z-index: 5;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app {
+  width: 100vw;
+  height: 100vh;
+  padding: 34px 18px 18px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.board {
+  width: min(1840px, calc(100vw - 36px));
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)), #111722;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 18px;
+  box-shadow: 0 18px 44px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.03);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+.display {
+  display: grid;
+  grid-template-columns: repeat(32, minmax(0, 1fr));
+  gap: 4px;
+}
+.progress-line {
+  margin-top: 10px;
+}
+.tile {
+  position: relative;
+  aspect-ratio: 0.72 / 1;
+  min-height: 34px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 4px 8px var(--shadow);
+  transform: translateZ(0);
+}
+.half {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 50%;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+}
+.top {
+  top: 0;
+  align-items: flex-end;
+  padding-bottom: 0.01em;
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0)), var(--panel-top);
+  border-bottom: 1px solid rgba(0,0,0,0.55);
+}
+.bottom {
+  bottom: 0;
+  align-items: flex-start;
+  padding-top: 0.01em;
+  background: linear-gradient(180deg, rgba(0,0,0,0.12), rgba(255,255,255,0.02)), var(--panel-bottom);
+  border-top: 1px solid rgba(255,255,255,0.03);
+}
+.char {
+  font-weight: 800;
+  line-height: 1;
+  font-size: clamp(16px, 2.15vw, 38px);
+  color: var(--text);
+  text-shadow: 0 2px 0 rgba(255,255,255,0.04);
+  will-change: transform, opacity, filter;
+}
+.top .char { transform: translateY(50%); }
+.bottom .char { transform: translateY(-50%); }
+.tile.animating .top .char { animation: flapTop 120ms ease-in; }
+.tile.animating .bottom .char { animation: flapBottom 120ms ease-out; }
+@keyframes flapTop {
+  0% { transform: translateY(50%) scaleY(1); opacity: 1; filter: brightness(1); }
+  49% { transform: translateY(58%) scaleY(0.92); opacity: 0.9; filter: brightness(0.9); }
+  50% { transform: translateY(42%) scaleY(1.08); opacity: 0.8; filter: brightness(1.18); }
+  100% { transform: translateY(50%) scaleY(1); opacity: 1; filter: brightness(1); }
+}
+@keyframes flapBottom {
+  0% { transform: translateY(-50%) scaleY(1); opacity: 1; filter: brightness(1); }
+  49% { transform: translateY(-42%) scaleY(1.08); opacity: 0.82; filter: brightness(1.18); }
+  50% { transform: translateY(-58%) scaleY(0.92); opacity: 0.92; filter: brightness(0.9); }
+  100% { transform: translateY(-50%) scaleY(1); opacity: 1; filter: brightness(1); }
+}
+.seam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 1px);
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 8%, rgba(0,0,0,0.7) 50%, rgba(255,255,255,0.08) 92%, transparent 100%);
+  pointer-events: none;
+}
+.hinge {
+  position: absolute;
+  top: calc(50% - 3px);
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #0c1017;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.hinge.left { left: -1px; }
+.hinge.right { right: -1px; }
+@media (max-width: 900px) {
+  .display { grid-template-columns: repeat(24, minmax(0, 1fr)); }
+  .char { font-size: clamp(14px, 3vw, 30px); }
+}

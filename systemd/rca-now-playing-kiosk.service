@@ -1,0 +1,14 @@
+[Unit]
+Description=Fullscreen now-playing browser kiosk
+After=display-manager.service rca-now-playing-web.service
+Wants=rca-now-playing-web.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/rca-hdmi-visualizer.env
+ExecStart=/usr/local/bin/start-now-playing-web
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

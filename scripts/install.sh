@@ -154,9 +154,11 @@ fi
 install -m 0755 "$REPO_DIR/scripts/start-cavasik-kiosk.sh" /usr/local/bin/start-cavasik-kiosk
 install -m 0755 "$REPO_DIR/scripts/start-audio-loopback.sh" /usr/local/bin/start-audio-loopback
 install -m 0755 "$REPO_DIR/scripts/start-now-playing-overlay.sh" /usr/local/bin/start-now-playing-overlay
+install -m 0755 "$REPO_DIR/scripts/start-now-playing-web.sh" /usr/local/bin/start-now-playing-web
 install -m 0755 "$REPO_DIR/scripts/check-cavasik.sh" /usr/local/bin/check-cavasik
 install -m 0755 "$REPO_DIR/scripts/rca-now-playing" /usr/local/bin/rca-now-playing
 install -m 0755 "$REPO_DIR/scripts/rca-now-playing-overlay" /usr/local/bin/rca-now-playing-overlay
+install -m 0755 "$REPO_DIR/scripts/rca-now-playing-web" /usr/local/bin/rca-now-playing-web
 install -m 0755 "$REPO_DIR/scripts/rca-simple-visualizer" /usr/local/bin/rca-simple-visualizer
 mkdir -p /opt/rca-hdmi-visualizer
 rm -rf /opt/rca-hdmi-visualizer/rca_visualizer
@@ -174,6 +176,8 @@ install -m 0644 "$REPO_DIR/systemd/rca-cavasik-kiosk.service" /etc/systemd/syste
 install -m 0644 "$REPO_DIR/systemd/rca-audio-loopback.service" /etc/systemd/system/rca-audio-loopback.service
 install -m 0644 "$REPO_DIR/systemd/rca-now-playing.service" /etc/systemd/system/rca-now-playing.service
 install -m 0644 "$REPO_DIR/systemd/rca-now-playing-overlay.service" /etc/systemd/system/rca-now-playing-overlay.service
+install -m 0644 "$REPO_DIR/systemd/rca-now-playing-web.service" /etc/systemd/system/rca-now-playing-web.service
+install -m 0644 "$REPO_DIR/systemd/rca-now-playing-kiosk.service" /etc/systemd/system/rca-now-playing-kiosk.service
 
 if [[ "$PLATFORM" == jetson-nano ]]; then
   install -m 0644 "$REPO_DIR/systemd/jetson-performance.service" /etc/systemd/system/jetson-performance.service
@@ -319,7 +323,8 @@ APT_UPGRADE_TIMER
 systemctl daemon-reload
 systemctl enable lightdm.service || true
 systemctl enable apt-daily.timer apt-daily-upgrade.timer
-systemctl enable rca-audio-loopback.service rca-now-playing.service rca-now-playing-overlay.service
+systemctl enable rca-audio-loopback.service rca-now-playing.service rca-now-playing-web.service rca-now-playing-kiosk.service
+systemctl disable --now rca-now-playing-overlay.service >/dev/null 2>&1 || true
 systemctl disable --now rca-cavasik-kiosk.service >/dev/null 2>&1 || true
 if [[ "$PLATFORM" == jetson-nano ]]; then
   systemctl enable jetson-performance.service
@@ -338,6 +343,6 @@ Recommended next steps:
   2. Enable recognition with RECOGNITION_ENABLED=true in $ENV_FILE
   3. Reboot: sudo reboot
   4. If audio routing is wrong, edit SOURCE_MATCH/SINK_MATCH in $ENV_FILE
-  5. Check services with: systemctl status rca-audio-loopback rca-now-playing rca-now-playing-overlay
+  5. Check services with: systemctl status rca-audio-loopback rca-now-playing rca-now-playing-web rca-now-playing-kiosk
   6. Optional legacy Cavasik check: check-cavasik --run-test
 EOF

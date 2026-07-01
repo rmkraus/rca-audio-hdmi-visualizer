@@ -1,0 +1,14 @@
+[Unit]
+Description=Now-playing web frontend server
+After=network.target rca-now-playing.service
+Wants=rca-now-playing.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/rca-hdmi-visualizer.env
+ExecStart=/usr/local/bin/rca-now-playing-web --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target
