@@ -112,6 +112,18 @@ function buildRow(row, len = DISPLAY_LEN, charsetName = "text") {
   }
 }
 
+function buildProgressBulbs(row, len = PROGRESS_LEN) {
+  row.el.innerHTML = "";
+  row.tiles = [];
+  for (let i = 0; i < len; i++) {
+    const bulb = document.createElement("div");
+    bulb.className = "progress-bulb";
+    bulb.style.setProperty("--glow", "0");
+    row.el.appendChild(bulb);
+    row.tiles.push(bulb);
+  }
+}
+
 function setRow(row, text, len = DISPLAY_LEN) {
   const next = normalizeText(text, len, row.charset || TEXT_CHARS);
   const old = row.tokens || [];
@@ -128,6 +140,15 @@ function setWrappedText(firstRow, secondRow, text) {
   const tokens = tokenize(text);
   setRow(firstRow, tokens.slice(0, DISPLAY_LEN).join(""), DISPLAY_LEN);
   setRow(secondRow, tokens.slice(DISPLAY_LEN, DISPLAY_LEN * 2).join(""), DISPLAY_LEN);
+}
+
+function setProgressBulbs(row, ratio) {
+  const progress = Math.max(0, Math.min(1, Number(ratio) || 0));
+  const scaled = progress * row.tiles.length;
+  row.tiles.forEach((bulb, i) => {
+    const glow = Math.max(0, Math.min(1, scaled - i));
+    bulb.style.setProperty("--glow", glow.toFixed(3));
+  });
 }
 
 function parseDate(text) {
@@ -199,10 +220,9 @@ function updateDisplay(data) {
   const p = progress(data);
   setTimeRow(good ? p : null);
   if (!good || !p) {
-    setRow(rows.progress, "", PROGRESS_LEN);
+    setProgressBulbs(rows.progress, 0);
   } else {
-    const filled = Math.max(0, Math.min(PROGRESS_LEN, Math.round(p.ratio * PROGRESS_LEN)));
-    setRow(rows.progress, PROGRESS_FILLED.repeat(filled) + PROGRESS_EMPTY.repeat(PROGRESS_LEN - filled), PROGRESS_LEN);
+    setProgressBulbs(rows.progress, p.ratio);
   }
   updateStats(data);
 }
@@ -226,7 +246,7 @@ function init() {
   buildRow(rows.currentSs, 2, "digits");
   buildRow(rows.totalMm, 2, "digits");
   buildRow(rows.totalSs, 2, "digits");
-  buildRow(rows.progress, PROGRESS_LEN);
+  buildProgressBulbs(rows.progress, PROGRESS_LEN);
   updateDisplay({
     status: "recognized",
     playback_status: "playing",
