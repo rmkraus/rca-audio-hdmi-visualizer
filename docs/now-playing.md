@@ -12,10 +12,12 @@ is `/var/lib/rca-hdmi-visualizer/now-playing.json`.
 
 ```text
 USB audio source
-  -> short WAV sample
-  -> Shazam-style snippet lookup
+  -> 12-second WAV sample
+  -> local RMS/silence gate
+  -> Shazam-style snippet lookup when audio is present
+  -> optional iTunes metadata lookup for track length
   -> /var/lib/rca-hdmi-visualizer/now-playing.json
-  -> fullscreen overlay
+  -> fullscreen overlay with progress bar
 ```
 
 ## Enable recognition
@@ -38,28 +40,42 @@ Then restart:
 sudo systemctl restart rca-now-playing.service rca-now-playing-overlay.service
 ```
 
-## Recommended timing
+## Listening loop
 
-Default conservative settings:
+Default settings:
 
 ```env
 RECOGNITION_SAMPLE_SECONDS=12
-RECOGNITION_INTERVAL_SECONDS=180
-RECOGNITION_COOLDOWN_SECONDS=30
 RECOGNITION_MIN_RMS=150
-RECOGNITION_KEEP_LAST_ON_MISS=true
+RECOGNITION_SILENCE_WINDOWS_TO_STOP=3
+RECOGNITION_NO_MATCH_LIMIT=3
+RECOGNITION_NO_MATCH_BACKOFF_SECONDS=60
+RECOGNITION_PROGRESS_RESUME_PERCENT=95
+RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS=5
 ```
 
 Meaning:
 
 - record a 12-second sample
-- if not recognized, wait 3 minutes before trying again
-- if the same track is recognized again, wait 10 minutes before trying again
-- skip network lookup when the sample is below the RMS silence threshold
+- measure RMS locally before any network lookup
+- if the sample is below `RECOGNITION_MIN_RMS`, skip Shazam
+- after 3 quiet samples, write `status=stopped` so the overlay shows `Stopped`
+- one good audio window switches `playback_status` back to `playing`
+- while playing, send above-threshold samples to Shazam
+- on a match, look up the iTunes track length, show the estimated progress bar,
+  and wait until the progress estimate reaches 95% before checking again
+- on no match, check the next sample immediately
+- after 3 consecutive no-match samples, pause for 60 seconds
 
-Shorter samples can work with the Shazam-style backend, but reliability depends
-on the exact passage. Use 12 seconds as the starting point. If recognition is
-spotty, try 15-20 seconds before increasing polling frequency.
+Shazam's match offset is the position where the captured snippet matched the
+track. The overlay estimates current position as:
+
+```text
+match offset + sample length + 5 seconds + elapsed wall-clock time
+```
+
+The extra 5 seconds compensates for lookup/display latency and is configurable
+with `RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS`.
 
 ## Source selection
 
@@ -95,7 +111,8 @@ Useful status values:
 
 - `recognized`: song/artist found and overlay should show it.
 - `no_match`: audio was present, but the recognizer did not find a match.
-- `silence`: sample RMS was below `RECOGNITION_MIN_RMS`; check input level/source.
+- `silence`: sample RMS was below `RECOGNITION_MIN_RMS`.
+- `stopped`: enough consecutive quiet samples occurred to consider playback stopped.
 - `error`: recognizer setup/network/runtime error; check `message` and service logs.
 
 ## Logs
@@ -107,8 +124,8 @@ journalctl -u rca-now-playing-overlay.service -f
 
 ## Overlay behavior
 
-The overlay shows only recognized tracks by default. To show diagnostic states
-such as silence/no-match while testing:
+The overlay shows recognized tracks and the `Stopped` state by default. To show
+diagnostic states such as silence/no-match while testing:
 
 ```env
 OVERLAY_SHOW_UNRECOGNIZED=true

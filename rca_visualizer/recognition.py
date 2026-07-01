@@ -29,6 +29,12 @@ class RecognitionResult:
         duration=0,
         acoustid="",
         musicbrainz_recording_id="",
+        track_duration_ms=0,
+        match_offset_seconds=None,
+        progress_start_seconds=None,
+        progress_padding_seconds=0,
+        playback_status="",
+        rms=None,
         raw=None,
         message="",
     ):
@@ -44,12 +50,19 @@ class RecognitionResult:
         # Shazam track key, not an AcoustID UUID.
         self.acoustid = acoustid
         self.musicbrainz_recording_id = musicbrainz_recording_id
+        self.track_duration_ms = int(track_duration_ms or 0)
+        self.match_offset_seconds = match_offset_seconds
+        self.progress_start_seconds = progress_start_seconds
+        self.progress_padding_seconds = progress_padding_seconds
+        self.playback_status = playback_status
+        self.rms = rms
         self.raw = raw
         self.message = message
 
     def to_dict(self):
         return {
             "status": self.status,
+            "playback_status": self.playback_status,
             "title": self.title,
             "artist": self.artist,
             "album": self.album,
@@ -57,8 +70,13 @@ class RecognitionResult:
             "provider": self.provider,
             "recognized_at": self.recognized_at,
             "duration": self.duration,
+            "rms": self.rms,
             "acoustid": self.acoustid,
             "musicbrainz_recording_id": self.musicbrainz_recording_id,
+            "track_duration_ms": self.track_duration_ms,
+            "match_offset_seconds": self.match_offset_seconds,
+            "progress_start_seconds": self.progress_start_seconds,
+            "progress_padding_seconds": self.progress_padding_seconds,
             "raw": self.raw,
             "message": self.message,
         }
@@ -216,9 +234,27 @@ def identify_with_shazam(path):
     return RecognitionResult(**data)
 
 
+def progress_start_seconds(result, padding_seconds):
+    if result.match_offset_seconds is None:
+        return None
+    try:
+        return float(result.match_offset_seconds) + float(result.duration or 0) + float(padding_seconds)
+    except (TypeError, ValueError):
+        return None
+
+
+def sleep_until_progress(result, target_percent):
+    if not result.track_duration_ms or result.progress_start_seconds is None:
+        return 0
+    track_seconds = float(result.track_duration_ms) / 1000.0
+    target_seconds = track_seconds * (float(target_percent) / 100.0)
+    return max(0, int(round(target_seconds - float(result.progress_start_seconds))))
+
+
 def identify_once(config):
     seconds = config.int("RECOGNITION_SAMPLE_SECONDS", 12)
     min_rms = config.float("RECOGNITION_MIN_RMS", 150.0)
+    padding = config.float("RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS", 5.0)
 
     with tempfile.TemporaryDirectory(prefix="rca-recognition-") as tmpdir:
         sample = Path(tmpdir) / "sample.wav"
@@ -227,23 +263,37 @@ def identify_once(config):
         if rms < min_rms:
             return RecognitionResult(
                 status="silence",
+                playback_status="stopped",
                 recognized_at=now_iso(),
                 duration=duration,
+                rms=rms,
                 message="sample RMS %.1f below threshold %.1f" % (rms, min_rms),
             )
 
         result = identify_with_shazam(sample)
         result.duration = duration
+        result.rms = rms
+        result.playback_status = "playing"
+        if result.status == "recognized":
+            result.progress_padding_seconds = padding
+            result.progress_start_seconds = progress_start_seconds(result, padding)
         return result
 
 
 def daemon(config):
     state_path = Path(config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json"))
-    interval = config.int("RECOGNITION_INTERVAL_SECONDS", 180)
-    cooldown = config.int("RECOGNITION_COOLDOWN_SECONDS", 30)
-    keep_last_on_miss = config.bool("RECOGNITION_KEEP_LAST_ON_MISS", True)
     enabled = config.bool("RECOGNITION_ENABLED", False)
-    last_track_key = ""
+    min_rms = config.float("RECOGNITION_MIN_RMS", 150.0)
+    sample_seconds = config.int("RECOGNITION_SAMPLE_SECONDS", 12)
+    silence_limit = config.int("RECOGNITION_SILENCE_WINDOWS_TO_STOP", 3)
+    no_match_limit = config.int("RECOGNITION_NO_MATCH_LIMIT", 3)
+    no_match_backoff = config.int("RECOGNITION_NO_MATCH_BACKOFF_SECONDS", 60)
+    progress_resume_percent = config.float("RECOGNITION_PROGRESS_RESUME_PERCENT", 95.0)
+    progress_padding = config.float("RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS", 5.0)
+
+    silence_count = 0
+    no_match_count = 0
+    playback_status = "stopped"
 
     if not enabled:
         print("Recognition disabled. Set RECOGNITION_ENABLED=true to enable.", flush=True)
@@ -251,34 +301,83 @@ def daemon(config):
             time.sleep(3600)
 
     while True:
+        sleep_for = 0
         try:
-            result = identify_once(config)
-            track_key = (result.artist + "\0" + result.title).lower()
+            with tempfile.TemporaryDirectory(prefix="rca-recognition-") as tmpdir:
+                sample = Path(tmpdir) / "sample.wav"
+                record_sample(config, sample, sample_seconds)
+                rms, duration = wav_stats(sample)
+
+                if rms < min_rms:
+                    silence_count += 1
+                    no_match_count = 0
+                    if silence_count >= silence_limit:
+                        playback_status = "stopped"
+                        result = RecognitionResult(
+                            status="stopped",
+                            playback_status="stopped",
+                            recognized_at=now_iso(),
+                            duration=duration,
+                            rms=rms,
+                            message="stopped after %s quiet samples; RMS %.1f below threshold %.1f"
+                            % (silence_count, rms, min_rms),
+                        )
+                    else:
+                        result = RecognitionResult(
+                            status="silence",
+                            playback_status=playback_status,
+                            recognized_at=now_iso(),
+                            duration=duration,
+                            rms=rms,
+                            message="quiet sample %s/%s; RMS %.1f below threshold %.1f"
+                            % (silence_count, silence_limit, rms, min_rms),
+                        )
+                    write_state(state_path, result)
+                else:
+                    silence_count = 0
+                    playback_status = "playing"
+                    result = identify_with_shazam(sample)
+                    result.duration = duration
+                    result.rms = rms
+                    result.playback_status = playback_status
+                    if result.status == "recognized":
+                        no_match_count = 0
+                        result.progress_padding_seconds = progress_padding
+                        result.progress_start_seconds = progress_start_seconds(result, progress_padding)
+                        write_state(state_path, result)
+                        sleep_for = sleep_until_progress(result, progress_resume_percent)
+                    elif result.status == "no_match":
+                        no_match_count += 1
+                        result.playback_status = playback_status
+                        result.message = result.message or "no Shazam match %s/%s" % (no_match_count, no_match_limit)
+                        write_state(state_path, result)
+                        if no_match_count >= no_match_limit:
+                            sleep_for = no_match_backoff
+                            no_match_count = 0
+                    else:
+                        write_state(state_path, result)
+                        sleep_for = no_match_backoff
+
             print(
-                "%s: %s - %s provider=%s score=%.3f %s" % (
+                "%s/%s: %s - %s provider=%s score=%.3f rms=%s %s" % (
+                    result.playback_status or "unknown",
                     result.status,
                     result.artist,
                     result.title,
                     result.provider,
                     result.score,
+                    "%.1f" % result.rms if result.rms is not None else "",
                     result.message,
                 ),
                 flush=True,
             )
-            if result.status == "recognized":
-                write_state(state_path, result)
-                sleep_for = cooldown if track_key == last_track_key else interval
-                last_track_key = track_key
-            else:
-                if not keep_last_on_miss or not state_path.exists():
-                    write_state(state_path, result)
-                sleep_for = interval
         except Exception as exc:
-            err = RecognitionResult(status="error", recognized_at=now_iso(), message=str(exc))
+            err = RecognitionResult(status="error", playback_status=playback_status, recognized_at=now_iso(), message=str(exc))
             write_state(state_path, err)
             print("recognition error: %s" % exc, file=sys.stderr, flush=True)
-            sleep_for = interval
-        time.sleep(max(5, sleep_for))
+            sleep_for = no_match_backoff
+        if sleep_for > 0:
+            time.sleep(max(5, sleep_for))
 
 
 def main(argv=None):
@@ -296,7 +395,7 @@ def main(argv=None):
         state_path = Path(config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json"))
         write_state(state_path, result)
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-        return 0 if result.status in {"recognized", "no_match", "silence"} else 1
+        return 0 if result.status in {"recognized", "no_match", "silence", "stopped"} else 1
 
     daemon(config)
     return 0
