@@ -232,55 +232,67 @@ body::after {
 }
 
 .bulb-progress {
-  display: grid;
-  grid-template-columns: repeat(32, minmax(0, 1fr));
-  align-items: center;
-  gap: 6px;
-  padding: 10px;
-  min-height: 48px;
-}
-
-.progress-bulb {
-  --glow: 0;
+  --progress: 0%;
   position: relative;
-  aspect-ratio: 1;
-  border-radius: 2px;
-  background:
-    radial-gradient(circle at 50% 45%,
-      rgba(255,244,198,calc(0.06 + var(--glow) * 0.78)) 0 12%,
-      rgba(255,197,96,calc(0.10 + var(--glow) * 0.82)) 20% 46%,
-      rgba(169,90,0,calc(0.10 + var(--glow) * 0.58)) 82%),
-    linear-gradient(#191713, #090807);
-  box-shadow:
-    0 0 calc(var(--glow) * 8px) rgba(255,190,70,calc(var(--glow) * 0.95)),
-    0 0 calc(var(--glow) * 18px) rgba(255,145,20,calc(var(--glow) * 0.45)),
-    inset 0 1px 4px rgba(255,255,255,calc(0.05 + var(--glow) * 0.70)),
-    inset 0 -2px 4px rgba(0,0,0,0.85),
-    0 0 0 1px #050504;
-  opacity: calc(0.42 + var(--glow) * 0.58);
-  transition: box-shadow 800ms ease, opacity 800ms ease, background 800ms ease;
+  display: block;
+  height: 48px;
+  overflow: hidden;
+  padding: 10px;
 }
 
-.progress-bulb::after {
+.bulb-progress::before {
   content: "";
   position: absolute;
-  inset: 18% 22% 52% 22%;
-  border-radius: 3px;
-  background: rgba(255,255,255,calc(0.03 + var(--glow) * 0.38));
-  filter: blur(0.4px);
-}
-
-.bulb-progress[data-complete="true"] .progress-bulb {
-  filter: brightness(1.18) saturate(1.08);
-}
-
-.bulb-progress[data-complete="true"] .progress-bulb:last-child {
+  left: 10px;
+  right: 10px;
+  top: 50%;
+  height: 18px;
+  transform: translateY(-50%);
+  border-radius: 4px;
+  background:
+    linear-gradient(90deg,
+      rgba(255,244,198,0.98) 0%,
+      rgba(255,203,96,0.96) max(0%, calc(var(--progress) - 8%)),
+      rgba(255,151,28,0.82) var(--progress),
+      rgba(72,43,12,0.46) calc(var(--progress) + 1%),
+      rgba(18,15,10,0.72) 100%);
   box-shadow:
-    0 0 8px rgba(255,190,70,0.95),
-    0 0 18px rgba(255,145,20,0.45),
-    0 0 28px rgba(255,145,20,0.24),
-    inset 0 1px 4px rgba(255,255,255,0.75),
+    0 0 10px rgba(255,190,70,0.32),
+    0 0 24px rgba(255,145,20,0.16),
+    inset 0 1px 4px rgba(255,255,255,0.34),
     inset 0 -2px 4px rgba(0,0,0,0.78),
+    0 0 0 1px #050504;
+  transition: background 900ms linear;
+}
+
+.bulb-progress::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 50%;
+  height: 18px;
+  transform: translateY(-50%);
+  border-radius: 4px;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,0.34) 0 1px,
+      transparent 1px calc(100% / 32));
+  opacity: 0.58;
+}
+
+.bulb-progress[data-complete="true"]::before {
+  background:
+    linear-gradient(90deg,
+      rgba(255,244,198,1) 0%,
+      rgba(255,203,96,0.98) 62%,
+      rgba(255,151,28,0.90) 100%);
+  box-shadow:
+    0 0 12px rgba(255,190,70,0.44),
+    0 0 30px rgba(255,145,20,0.20),
+    inset 0 1px 4px rgba(255,255,255,0.44),
+    inset 0 -2px 4px rgba(0,0,0,0.72),
     0 0 0 1px #050504;
 }
 

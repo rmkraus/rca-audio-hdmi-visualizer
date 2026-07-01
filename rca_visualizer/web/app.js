@@ -1,5 +1,4 @@
 const DISPLAY_LEN = 32;
-const PROGRESS_LEN = DISPLAY_LEN;
 const STEP_MS = 28;
 const TILE_STAGGER_MS = 18;
 const TEXT_CHARS = Array.from(" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/:.'&,()[]!?");
@@ -10,7 +9,7 @@ const rows = {
   track2: { el: document.getElementById("line-track-2"), tiles: [], tokens: [], charset: TEXT_CHARS },
   artist: { el: document.getElementById("line-artist"), tiles: [], tokens: [], charset: TEXT_CHARS },
   record: { el: document.getElementById("line-record"), tiles: [], tokens: [], charset: TEXT_CHARS },
-  progress: { el: document.getElementById("line-progress"), tiles: [], tokens: [], charset: TEXT_CHARS },
+  progress: { el: document.getElementById("line-progress") },
   time: { el: document.getElementById("line-time"), tiles: [], tokens: [], charset: TIME_CHARS },
 };
 
@@ -107,26 +106,21 @@ function buildRow(row, len = DISPLAY_LEN, charsetName = "text") {
   }
 }
 
-function buildProgressBulbs(row, len = PROGRESS_LEN) {
-  row.el.innerHTML = "";
-  row.tiles = [];
-  for (let i = 0; i < len; i++) {
-    const bulb = document.createElement("div");
-    bulb.className = "progress-bulb";
-    bulb.style.setProperty("--glow", "0");
-    row.el.appendChild(bulb);
-    row.tiles.push(bulb);
-  }
-}
 
-function setRow(row, text, len = DISPLAY_LEN) {
+function setRow(row, text, len = DISPLAY_LEN, options = {}) {
   const next = normalizeText(text, len, row.charset || TEXT_CHARS);
   const old = row.tokens || [];
   row.tokens = next;
   next.forEach((ch, i) => {
     if (!row.tiles[i]) return;
     if (old[i] !== ch || row.tiles[i].dataset.target !== ch) {
-      setTimeout(() => animateTileTo(row.tiles[i], ch), i * TILE_STAGGER_MS);
+      if (options.instant) {
+        row.tiles[i].dataset.target = ch;
+        row.tiles[i].dataset.busy = "0";
+        setTileChar(row.tiles[i], ch);
+      } else {
+        setTimeout(() => animateTileTo(row.tiles[i], ch), i * TILE_STAGGER_MS);
+      }
     }
   });
 }
@@ -137,33 +131,11 @@ function setWrappedText(firstRow, secondRow, text) {
   setRow(secondRow, tokens.slice(DISPLAY_LEN, DISPLAY_LEN * 2).join(""), DISPLAY_LEN);
 }
 
-function setProgressBulbs(row, ratio) {
-  const progress = Math.max(0, Math.min(1, Number(ratio) || 0));
-  if (progress >= 0.995) {
-    row.el.dataset.complete = "true";
-    row.tiles.forEach(bulb => bulb.style.setProperty("--glow", "1.000"));
-    return;
-  }
-  row.el.dataset.complete = "false";
-  const scaled = progress * row.tiles.length;
-  const rampWidth = 5;
-  const warmAhead = 2;
-  row.tiles.forEach((bulb, i) => {
-    const distance = scaled - i;
-    let glow = 0;
-    if (distance >= rampWidth) {
-      glow = 1;
-    } else if (distance > 0) {
-      // Fade the leading edge across several bulbs instead of a single
-      // partially-lit bulb, like incandescent lamps warming up in sequence.
-      glow = 0.18 + 0.82 * (distance / rampWidth);
-    } else if (distance > -warmAhead) {
-      // A very faint pre-glow just ahead of the current position keeps the
-      // transition from looking like a hard digital boundary.
-      glow = 0.10 * (1 + distance / warmAhead);
-    }
-    bulb.style.setProperty("--glow", Math.max(0, Math.min(1, glow)).toFixed(3));
-  });
+function setProgressLine(row, ratio) {
+  if (!row || !row.el) return;
+  const progress = clamp01(ratio);
+  row.el.style.setProperty("--progress", `${(progress * 100).toFixed(2)}%`);
+  row.el.dataset.complete = progress >= 0.995 ? "true" : "false";
 }
 
 function clamp01(value) {
@@ -198,13 +170,13 @@ function timeParts(seconds) {
 
 function setTimeRow(p) {
   if (!p) {
-    setRow(rows.time, "", DISPLAY_LEN);
+    setRow(rows.time, "", DISPLAY_LEN, { instant: true });
     rows.time.el.dataset.active = "0";
     return;
   }
   const current = timeParts(p.current);
   const total = timeParts(p.total);
-  setRow(rows.time, `${current.mm}:${current.ss} / ${total.mm}:${total.ss}`, DISPLAY_LEN);
+  setRow(rows.time, `${current.mm}:${current.ss} / ${total.mm}:${total.ss}`, DISPLAY_LEN, { instant: true });
   rows.time.el.dataset.active = "1";
 }
 
@@ -236,9 +208,9 @@ function updateDisplay(data) {
   const p = progress(data);
   setTimeRow(good ? p : null);
   if (!good || !p) {
-    setProgressBulbs(rows.progress, 0);
+    setProgressLine(rows.progress, 0);
   } else {
-    setProgressBulbs(rows.progress, p.ratio);
+    setProgressLine(rows.progress, p.ratio);
   }
   updateStats(data);
 }
@@ -260,7 +232,6 @@ function init() {
   buildRow(rows.artist);
   buildRow(rows.record);
   buildRow(rows.time, DISPLAY_LEN, "time");
-  buildProgressBulbs(rows.progress, PROGRESS_LEN);
   updateDisplay({
     status: "recognized",
     playback_status: "playing",
@@ -274,7 +245,7 @@ function init() {
     shazam_requests_per_min: 0,
   });
   fetchState();
-  setInterval(fetchState, 1000);
+  setInterval(fetchState, 2000);
 }
 
 document.addEventListener("DOMContentLoaded", init);
