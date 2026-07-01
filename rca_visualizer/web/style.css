@@ -13,8 +13,6 @@
   --frame-hi: #222a36;
   --text: #f2efe6;
   --muted: #b8c1cf;
-  --deco-gold: #c4a66a;
-  --deco-gold-dim: rgba(196,166,106,0.34);
   --border: rgba(255,255,255,0.08);
   --shadow: rgba(0,0,0,0.45);
   --time-row-height: 96px;
@@ -28,7 +26,13 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: radial-gradient(circle at top, #111716 0%, #050707 48%, #010202 100%);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(255,255,255,0.18), transparent 34%),
+    linear-gradient(90deg, rgba(0,0,0,0.18) 1px, transparent 1px) 0 0 / 96px 48px,
+    linear-gradient(90deg, rgba(0,0,0,0.12) 1px, transparent 1px) 48px 24px / 96px 48px,
+    linear-gradient(0deg, rgba(0,0,0,0.22) 1px, transparent 1px) 0 0 / 96px 48px,
+    linear-gradient(0deg, rgba(255,255,255,0.10), rgba(0,0,0,0.08)),
+    #9a9588;
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
 }
@@ -50,8 +54,6 @@ html, body {
   border-radius: 6px;
   box-shadow:
     0 22px 54px rgba(0,0,0,0.62),
-    0 0 0 1px var(--deco-gold-dim),
-    inset 0 0 0 1px rgba(196,166,106,0.18),
     inset 0 1px 0 rgba(255,255,255,0.08),
     inset 0 -2px 8px rgba(0,0,0,0.72);
   padding: 22px 22px 24px;
@@ -65,18 +67,7 @@ html, body {
   inset: 8px;
   border: 1px solid rgba(255,255,255,0.035);
   pointer-events: none;
-  background:
-    linear-gradient(90deg, var(--deco-gold-dim) 0 96px, transparent 96px calc(100% - 96px), var(--deco-gold-dim) calc(100% - 96px)) top / 100% 2px no-repeat,
-    linear-gradient(90deg, var(--deco-gold-dim) 0 64px, transparent 64px calc(100% - 64px), var(--deco-gold-dim) calc(100% - 64px)) 0 10px / 100% 2px no-repeat,
-    linear-gradient(90deg, var(--deco-gold-dim) 0 96px, transparent 96px calc(100% - 96px), var(--deco-gold-dim) calc(100% - 96px)) bottom / 100% 2px no-repeat,
-    linear-gradient(90deg, var(--deco-gold-dim) 0 64px, transparent 64px calc(100% - 64px), var(--deco-gold-dim) calc(100% - 64px)) 0 calc(100% - 10px) / 100% 2px no-repeat,
-    linear-gradient(180deg, var(--deco-gold-dim) 0 76px, transparent 76px calc(100% - 76px), var(--deco-gold-dim) calc(100% - 76px)) left / 2px 100% no-repeat,
-    linear-gradient(180deg, var(--deco-gold-dim) 0 48px, transparent 48px calc(100% - 48px), var(--deco-gold-dim) calc(100% - 48px)) 10px 0 / 2px 100% no-repeat,
-    linear-gradient(180deg, var(--deco-gold-dim) 0 76px, transparent 76px calc(100% - 76px), var(--deco-gold-dim) calc(100% - 76px)) right / 2px 100% no-repeat,
-    linear-gradient(180deg, var(--deco-gold-dim) 0 48px, transparent 48px calc(100% - 48px), var(--deco-gold-dim) calc(100% - 48px)) calc(100% - 10px) 0 / 2px 100% no-repeat;
-  box-shadow:
-    inset 0 0 32px rgba(0,0,0,0.7),
-    inset 0 0 0 1px rgba(196,166,106,0.08);
+  box-shadow: inset 0 0 32px rgba(0,0,0,0.7);
 }
 .board::after {
   content: "";
@@ -123,7 +114,6 @@ html, body {
   border-bottom: 3px solid rgba(255,255,255,0.025);
 }
 .row-label {
-  position: relative;
   min-height: 34px;
   border-radius: 0;
   border: 0;
@@ -136,26 +126,6 @@ html, body {
   text-shadow: 0 1px 0 rgba(255,255,255,0.10), 0 2px 6px rgba(0,0,0,0.95);
   border-right: 8px solid #000;
   opacity: 1;
-}
-.row-label::before,
-.row-label::after {
-  content: "";
-  position: absolute;
-  right: 10px;
-  width: 2px;
-  height: 28%;
-  background: linear-gradient(180deg, transparent, var(--deco-gold), transparent);
-  opacity: 0.55;
-}
-.row-label::before { top: 12%; }
-.row-label::after { bottom: 12%; }
-.continuation-label::before,
-.continuation-label::after,
-.time-label::before,
-.time-label::after,
-.progress-label::before,
-.progress-label::after {
-  opacity: 0.28;
 }
 .label-icon {
   width: clamp(24px, 2.4vw, 42px);
