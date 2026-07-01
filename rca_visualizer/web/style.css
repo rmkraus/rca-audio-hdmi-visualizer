@@ -398,10 +398,21 @@ body::after {
   box-shadow: inset 0 0 0 1px rgba(255,220,150,0.05);
 }
 
-.input-meter .meter-face {
-  background:
-    radial-gradient(ellipse at 50% 112%, rgba(186,255,30,0.12), transparent 54%),
-    linear-gradient(180deg, rgba(236,244,208,0.90) 0%, rgba(206,220,148,0.90) 58%, rgba(126,142,69,0.84) 100%);
+body[data-playback="stopped"] .vu-meter {
+  opacity: 0.46;
+  filter: saturate(0.55) brightness(0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    inset 0 -8px 18px rgba(0,0,0,0.72),
+    0 0 0 4px #050504,
+    0 8px 16px rgba(0,0,0,0.30);
+}
+
+body[data-playback="stopped"] .meter-face {
+  box-shadow:
+    inset 0 1px 2px rgba(255,255,255,0.18),
+    inset 0 -8px 14px rgba(42,22,7,0.55),
+    0 0 0 2px rgba(0,0,0,0.72);
 }
 
 .tile {
