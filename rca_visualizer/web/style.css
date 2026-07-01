@@ -268,6 +268,142 @@ body::after {
   filter: blur(0.4px);
 }
 
+.meter-stack {
+  position: absolute;
+  z-index: 2;
+  top: 78px;
+  right: 88px;
+  width: 255px;
+  display: grid;
+  gap: 24px;
+  pointer-events: none;
+}
+
+.vu-meter {
+  position: relative;
+  padding: 14px 14px 12px;
+  border-radius: 13px;
+  border: 1px solid rgba(255,220,150,0.14);
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.04), transparent 38%),
+    linear-gradient(180deg, #16130d 0%, #080706 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    inset 0 -8px 18px rgba(0,0,0,0.58),
+    0 0 0 4px #050504,
+    0 10px 22px rgba(0,0,0,0.38);
+}
+
+.meter-label {
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: 0.15em;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 #000;
+}
+
+.meter-face {
+  position: relative;
+  height: 134px;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid #100d08;
+  background:
+    radial-gradient(ellipse at 50% 112%, rgba(255,210,92,0.16), transparent 54%),
+    linear-gradient(180deg, rgba(255,244,198,0.92) 0%, rgba(235,205,142,0.92) 58%, rgba(180,130,63,0.86) 100%);
+  box-shadow:
+    inset 0 1px 3px rgba(255,255,255,0.42),
+    inset 0 -8px 14px rgba(84,42,10,0.35),
+    0 0 0 2px rgba(0,0,0,0.55);
+}
+
+.meter-face::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-conic-gradient(from 232deg at 50% 107%, rgba(61,31,7,0.50) 0 0.7deg, transparent 0.7deg 7deg),
+    radial-gradient(ellipse at 50% 112%, transparent 0 42%, rgba(83,40,11,0.18) 43% 43.7%, transparent 44%);
+  opacity: 0.72;
+}
+
+.meter-scale {
+  position: absolute;
+  z-index: 2;
+  left: 18px;
+  right: 18px;
+  top: 16px;
+  display: flex;
+  justify-content: space-between;
+  color: rgba(58,31,10,0.88);
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.meter-arc {
+  position: absolute;
+  z-index: 1;
+  left: 22px;
+  right: 22px;
+  bottom: -74px;
+  height: 168px;
+  border-top: 3px solid rgba(76,35,7,0.62);
+  border-radius: 50% 50% 0 0;
+}
+
+.meter-needle {
+  position: absolute;
+  z-index: 4;
+  left: calc(50% - 1px);
+  bottom: 17px;
+  width: 2px;
+  height: 94px;
+  background: linear-gradient(180deg, #441200, #a01800 65%, #2b0800 100%);
+  border-radius: 2px;
+  transform-origin: 50% 100%;
+  transform: rotate(-54deg);
+  box-shadow: 0 0 3px rgba(90,20,0,0.42);
+  transition: transform 90ms linear;
+}
+
+.meter-pivot {
+  position: absolute;
+  z-index: 5;
+  left: calc(50% - 11px);
+  bottom: 7px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 30%, #5f5645, #090806 70%);
+  box-shadow: inset 0 1px 2px rgba(255,255,255,0.38), 0 2px 6px rgba(0,0,0,0.68);
+}
+
+.meter-readout {
+  margin-top: 10px;
+  padding: 5px 7px;
+  border-radius: 4px;
+  background: linear-gradient(#090806, #020201);
+  color: rgba(241,223,185,0.88);
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.07em;
+  text-align: center;
+  text-shadow: 0 0 6px rgba(255,200,112,0.24);
+  box-shadow: inset 0 0 0 1px rgba(255,220,150,0.05);
+}
+
+.input-meter .meter-face {
+  background:
+    radial-gradient(ellipse at 50% 112%, rgba(186,255,30,0.12), transparent 54%),
+    linear-gradient(180deg, rgba(236,244,208,0.90) 0%, rgba(206,220,148,0.90) 58%, rgba(126,142,69,0.84) 100%);
+}
+
 .tile {
   position: relative;
   aspect-ratio: 0.72 / 1;
@@ -506,6 +642,9 @@ body[data-listening="true"] .lamp.listening {
 @media (max-width: 1100px) {
   .board { padding-left: 48px; padding-right: 48px; }
   .display-row { width: 76%; }
+  .meter-stack { right: 58px; width: 220px; gap: 18px; }
+  .meter-face { height: 116px; }
+  .meter-needle { height: 80px; }
   .controls { left: 82px; right: 82px; }
 }
 
@@ -513,6 +652,7 @@ body[data-listening="true"] .lamp.listening {
   .app { padding: 38px 18px 18px; }
   .board { width: calc(100vw - 36px); padding: 42px 32px 116px; min-height: calc(100vh - 58px); }
   .display-row { width: 100%; }
+  .meter-stack { display: none; }
   .display { grid-template-columns: repeat(32, minmax(0, 1fr)); gap: 2px; padding: 5px; }
   .tile { min-height: 32px; }
   .char { font-size: clamp(13px, 3vw, 24px); }
