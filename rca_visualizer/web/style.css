@@ -135,13 +135,13 @@ body::after {
 }
 
 .title-continuation-row {
-  margin-bottom: clamp(10px, 1.3vh, 16px);
-  padding-bottom: clamp(12px, 1.7vh, 18px);
+  margin-bottom: clamp(20px, 3.0vh, 36px);
+  padding-bottom: clamp(20px, 2.8vh, 34px);
 }
 
 .record-row {
-  margin-bottom: clamp(10px, 1.3vh, 16px);
-  padding-bottom: clamp(12px, 1.7vh, 18px);
+  margin-bottom: clamp(20px, 3.0vh, 36px);
+  padding-bottom: clamp(20px, 2.8vh, 34px);
 }
 
 .title-continuation-row::after,
