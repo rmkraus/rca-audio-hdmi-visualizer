@@ -15,10 +15,10 @@
   --muted: #b8c1cf;
   --border: rgba(255,255,255,0.08);
   --shadow: rgba(0,0,0,0.45);
-  --time-row-height: clamp(54px, 6.8vh, 76px);
-  --time-digit-group: clamp(74px, 6.2vw, 118px);
-  --time-colon-tab: clamp(42px, 4vw, 76px);
-  --time-slash-tab: clamp(72px, 7vw, 132px);
+  --time-row-height: 96px;
+  --time-digit-group: 146px;
+  --time-colon-tab: 78px;
+  --time-slash-tab: 132px;
 }
 * { box-sizing: border-box; }
 html, body {
@@ -112,23 +112,24 @@ html, body {
   border-radius: 0;
   border: 0;
   background: transparent;
-  color: #d7dee9;
+  color: #f2efe6;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: clamp(22px, 2vw, 38px);
   text-shadow: 0 1px 0 rgba(255,255,255,0.10), 0 2px 6px rgba(0,0,0,0.95);
   border-right: 8px solid #000;
-  opacity: 0.92;
+  opacity: 1;
 }
-.progress-label {
-  color: #35f06f;
-  text-shadow: 0 0 8px rgba(53,240,111,0.45);
+.label-icon {
+  width: clamp(24px, 2.4vw, 42px);
+  height: clamp(24px, 2.4vw, 42px);
+  display: block;
+  fill: currentColor;
+  filter: drop-shadow(0 2px 5px rgba(0,0,0,0.95));
 }
 .time-label {
   color: #f2efe6;
-  font-size: clamp(18px, 1.7vw, 32px);
-  opacity: 0.84;
 }
 .display {
   display: grid;
@@ -187,7 +188,7 @@ html, body {
 }
 .time-display .tile .char {
   font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
-  font-size: clamp(16px, 3.5vh, 34px);
+  font-size: clamp(30px, 2.25vw, 40px);
 }
 .metal-separator {
   width: 100%;
@@ -354,9 +355,9 @@ html, body {
       var(--time-digit-group);
   }
   :root {
-    --time-row-height: clamp(46px, 8vh, 62px);
-    --time-digit-group: clamp(54px, 13vw, 82px);
-    --time-colon-tab: clamp(26px, 6vw, 42px);
-    --time-slash-tab: clamp(44px, 10vw, 70px);
+    --time-row-height: 72px;
+    --time-digit-group: clamp(64px, 13vw, 82px);
+    --time-colon-tab: clamp(30px, 6vw, 42px);
+    --time-slash-tab: clamp(48px, 10vw, 70px);
   }
 }
