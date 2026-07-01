@@ -58,7 +58,7 @@ body::after {
       rgba(255,138,26,0.15) 10%,
       rgba(255,118,18,0.052) 22%,
       transparent 38%);
-  background-size: 22vw 74vh, 22vw 74vh;
+  background-size: 24vw 82vh, 24vw 82vh;
   background-position: left 50%, right 50%;
   background-repeat: no-repeat;
   mix-blend-mode: screen;
@@ -126,7 +126,7 @@ body[data-sign-light="off"]::after {
   background:
     radial-gradient(ellipse at left 52%, rgba(255,152,34,0.12) 0%, rgba(255,122,22,0.052) 13%, transparent 31%),
     radial-gradient(ellipse at right 52%, rgba(255,152,34,0.12) 0%, rgba(255,122,22,0.052) 13%, transparent 31%);
-  background-size: 18vw 70vh, 18vw 70vh;
+  background-size: 19vw 78vh, 19vw 78vh;
   background-position: left 50%, right 50%;
   background-repeat: no-repeat;
   transition: opacity 120ms ease-out;
