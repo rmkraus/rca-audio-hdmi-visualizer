@@ -345,7 +345,7 @@ def daemon(config):
     enabled = config.bool("RECOGNITION_ENABLED", False)
     min_rms = config.float("RECOGNITION_MIN_RMS", 150.0)
     sample_seconds = config.int("RECOGNITION_SAMPLE_SECONDS", 12)
-    silence_limit = config.int("RECOGNITION_SILENCE_WINDOWS_TO_STOP", 3)
+    silence_limit = config.int("RECOGNITION_SILENCE_WINDOWS_TO_STOP", 1)
     no_match_limit = config.int("RECOGNITION_NO_MATCH_LIMIT", 3)
     no_match_backoff = config.int("RECOGNITION_NO_MATCH_BACKOFF_SECONDS", 30)
     ratelimit_threshold = config.float("RECOGNITION_RATELIMIT_REQUESTS_PER_MIN", 5.0)
@@ -393,27 +393,16 @@ def daemon(config):
                 if rms < min_rms:
                     silence_count += 1
                     no_match_count = 0
-                    if silence_count >= silence_limit:
-                        playback_status = "stopped"
-                        result = RecognitionResult(
-                            status="stopped",
-                            playback_status="stopped",
-                            recognized_at=now_iso(),
-                            duration=duration,
-                            rms=rms,
-                            message="stopped after %s quiet samples; RMS %.1f below threshold %.1f"
-                            % (silence_count, rms, min_rms),
-                        )
-                    else:
-                        result = RecognitionResult(
-                            status="silence",
-                            playback_status=playback_status,
-                            recognized_at=now_iso(),
-                            duration=duration,
-                            rms=rms,
-                            message="quiet sample %s/%s; RMS %.1f below threshold %.1f"
-                            % (silence_count, silence_limit, rms, min_rms),
-                        )
+                    playback_status = "stopped"
+                    result = RecognitionResult(
+                        status="stopped",
+                        playback_status="stopped",
+                        recognized_at=now_iso(),
+                        duration=duration,
+                        rms=rms,
+                        message="stopped after quiet sample; RMS %.1f below threshold %.1f"
+                        % (rms, min_rms),
+                    )
                     attach_metrics(result, shazam_request_count, request_rate(shazam_request_times))
                     write_state(state_path, result)
                     last_display_result = result
