@@ -165,9 +165,18 @@ body::after {
 .display {
   display: grid;
   grid-template-columns: repeat(32, minmax(0, 1fr));
+  grid-auto-rows: 58px;
   gap: 3px;
   padding: 8px;
-  min-height: 76px;
+  height: 74px;
+}
+
+.display .tile {
+  aspect-ratio: auto;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 58px;
 }
 
 .time-row {
@@ -268,7 +277,7 @@ body::after {
 .tile {
   position: relative;
   aspect-ratio: 0.72 / 1;
-  min-height: 58px;
+  min-height: 42px;
   border-radius: 2px;
   overflow: hidden;
   border: 0;
