@@ -124,7 +124,7 @@ body::after {
 .display-row {
   width: 76%;
   display: grid;
-  grid-template-columns: 0 1fr;
+  grid-template-columns: 1fr;
   gap: 0;
   align-items: stretch;
   position: relative;
@@ -148,6 +148,7 @@ body::after {
 
 .row-label {
   display: none;
+  position: absolute;
 }
 
 .display,
