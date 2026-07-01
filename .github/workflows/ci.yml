@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Bats
+        run: sudo apt-get update && sudo apt-get install -y bats
+
+      - name: Check executable scripts
+        run: |
+          bash -n scripts/*.sh
+          python3 -m py_compile scripts/rca-now-playing scripts/rca-now-playing-overlay scripts/rca-now-playing-web scripts/rca-simple-visualizer
+
+      - name: Compile Python modules
+        run: python3 -m compileall rca_visualizer tests
+
+      - name: Run unit tests
+        run: |
+          python3 tests/test_audio_detection.py
+          python3 tests/test_config_state_provider.py
+
+      - name: Run Bats smoke tests
+        run: bats tests.bats

@@ -14,3 +14,8 @@
   run python3 tests/test_audio_detection.py
   [ "$status" -eq 0 ]
 }
+
+@test "config/state/provider unit tests pass" {
+  run python3 tests/test_config_state_provider.py
+  [ "$status" -eq 0 ]
+}
