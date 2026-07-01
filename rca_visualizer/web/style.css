@@ -11,10 +11,6 @@
   --amber: #ffc35a;
   --green: #baff1e;
   --red: #8f2416;
-  --time-row-height: 64px;
-  --time-digit-group: 76px;
-  --time-colon-tab: 32px;
-  --time-slash-tab: 58px;
 }
 
 * { box-sizing: border-box; }
@@ -194,7 +190,6 @@ body::after {
 }
 
 .display,
-.time-display-frame,
 .bulb-progress {
   border-radius: 4px;
   background: linear-gradient(#0d0b08, #020201);
@@ -226,52 +221,8 @@ body::after {
   margin-top: 5px;
 }
 
-.time-display-frame {
-  width: 100%;
-  display: grid;
-  grid-template-columns:
-    var(--time-digit-group) var(--time-colon-tab)
-    var(--time-digit-group) var(--time-slash-tab)
-    var(--time-digit-group) var(--time-colon-tab)
-    var(--time-digit-group);
-  justify-content: start;
-  align-items: stretch;
-  height: var(--time-row-height);
-  padding: 7px;
-}
-
-.time-display-frame[data-active="0"] {
+.time-display[data-active="0"] {
   opacity: 0.52;
-}
-
-.time-display {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  min-width: 0;
-  height: 100%;
-}
-
-.time-display .tile {
-  aspect-ratio: auto;
-  min-height: 0;
-  height: 100%;
-}
-
-.metal-separator {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  color: var(--text);
-  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
-  font-size: clamp(24px, 2.1vw, 34px);
-  font-weight: 700;
-  line-height: 1;
-  background: linear-gradient(#100e0a, #050504);
-  border-left: 1px solid #050504;
-  border-right: 1px solid #050504;
-  text-shadow: 0 1px 0 #000, 0 0 7px rgba(255,220,160,0.30);
 }
 
 .progress-row {
@@ -383,8 +334,8 @@ body::after {
 }
 
 .time-display .tile .char {
-  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
-  font-size: clamp(24px, 2vw, 33px);
+  font-family: "Roboto Condensed", "Arial Narrow", "DejaVu Sans Mono", monospace;
+  font-size: clamp(25px, 2.25vw, 40px);
 }
 
 .top .char { transform: translateY(50%); }
@@ -555,23 +506,16 @@ body[data-listening="true"] .lamp.listening {
 @media (max-width: 1100px) {
   .board { padding-left: 48px; padding-right: 48px; }
   .display-row { width: 76%; }
-  .time-display-frame { width: 100%; }
   .controls { left: 82px; right: 82px; }
 }
 
 @media (max-width: 900px) {
   .app { padding: 38px 18px 18px; }
   .board { width: calc(100vw - 36px); padding: 42px 32px 116px; min-height: calc(100vh - 58px); }
-  .display-row, .time-display-frame { width: 100%; }
+  .display-row { width: 100%; }
   .display { grid-template-columns: repeat(32, minmax(0, 1fr)); gap: 2px; padding: 5px; }
   .tile { min-height: 32px; }
   .char { font-size: clamp(13px, 3vw, 24px); }
   .bulb-progress { gap: 3px; padding: 7px; }
   .controls { left: 52px; right: 52px; bottom: 34px; }
-  :root {
-    --time-row-height: 54px;
-    --time-digit-group: clamp(54px, 13vw, 72px);
-    --time-colon-tab: clamp(24px, 5vw, 34px);
-    --time-slash-tab: clamp(38px, 9vw, 54px);
-  }
 }

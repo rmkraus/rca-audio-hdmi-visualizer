@@ -5,7 +5,7 @@ const PROGRESS_EMPTY = "░";
 const STEP_MS = 28;
 const TILE_STAGGER_MS = 18;
 const TEXT_CHARS = Array.from(" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/:.'&,()[]!?█░");
-const DIGIT_CHARS = Array.from("0123456789");
+const TIME_CHARS = Array.from(" 0123456789:/");
 
 const rows = {
   track: { el: document.getElementById("line-track"), tiles: [], tokens: [], charset: TEXT_CHARS },
@@ -13,10 +13,7 @@ const rows = {
   artist: { el: document.getElementById("line-artist"), tiles: [], tokens: [], charset: TEXT_CHARS },
   record: { el: document.getElementById("line-record"), tiles: [], tokens: [], charset: TEXT_CHARS },
   progress: { el: document.getElementById("line-progress"), tiles: [], tokens: [], charset: TEXT_CHARS },
-  currentMm: { el: document.getElementById("time-current-mm"), tiles: [], tokens: [], charset: DIGIT_CHARS },
-  currentSs: { el: document.getElementById("time-current-ss"), tiles: [], tokens: [], charset: DIGIT_CHARS },
-  totalMm: { el: document.getElementById("time-total-mm"), tiles: [], tokens: [], charset: DIGIT_CHARS },
-  totalSs: { el: document.getElementById("time-total-ss"), tiles: [], tokens: [], charset: DIGIT_CHARS },
+  time: { el: document.getElementById("line-time"), tiles: [], tokens: [], charset: TIME_CHARS },
 };
 
 function tokenize(text) {
@@ -62,7 +59,7 @@ function pulseTile(tile) {
 }
 
 function randomChar(tile) {
-  const chars = tile.dataset.charset === "digits" ? DIGIT_CHARS : TEXT_CHARS;
+  const chars = tile.dataset.charset === "time" ? TIME_CHARS : TEXT_CHARS;
   return chars[Math.floor(Math.random() * chars.length)];
 }
 
@@ -106,7 +103,7 @@ function buildRow(row, len = DISPLAY_LEN, charsetName = "text") {
   row.el.innerHTML = "";
   row.tiles = [];
   for (let i = 0; i < len; i++) {
-    const tile = makeTile(charsetName === "digits" ? "0" : " ", row.el.id || "", charsetName);
+    const tile = makeTile(charsetName === "text" ? " " : "0", row.el.id || "", charsetName);
     row.el.appendChild(tile);
     row.tiles.push(tile);
   }
@@ -178,20 +175,14 @@ function timeParts(seconds) {
 
 function setTimeRow(p) {
   if (!p) {
-    setRow(rows.currentMm, "00", 2);
-    setRow(rows.currentSs, "00", 2);
-    setRow(rows.totalMm, "00", 2);
-    setRow(rows.totalSs, "00", 2);
-    document.querySelector(".time-display-frame").dataset.active = "0";
+    setRow(rows.time, "", DISPLAY_LEN);
+    rows.time.el.dataset.active = "0";
     return;
   }
   const current = timeParts(p.current);
   const total = timeParts(p.total);
-  setRow(rows.currentMm, current.mm, 2);
-  setRow(rows.currentSs, current.ss, 2);
-  setRow(rows.totalMm, total.mm, 2);
-  setRow(rows.totalSs, total.ss, 2);
-  document.querySelector(".time-display-frame").dataset.active = "1";
+  setRow(rows.time, `${current.mm}:${current.ss} / ${total.mm}:${total.ss}`, DISPLAY_LEN);
+  rows.time.el.dataset.active = "1";
 }
 
 function statusParts(data) {
@@ -244,10 +235,7 @@ function init() {
   buildRow(rows.track2);
   buildRow(rows.artist);
   buildRow(rows.record);
-  buildRow(rows.currentMm, 2, "digits");
-  buildRow(rows.currentSs, 2, "digits");
-  buildRow(rows.totalMm, 2, "digits");
-  buildRow(rows.totalSs, 2, "digits");
+  buildRow(rows.time, DISPLAY_LEN, "time");
   buildProgressBulbs(rows.progress, PROGRESS_LEN);
   updateDisplay({
     status: "recognized",
