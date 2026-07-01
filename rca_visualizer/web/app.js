@@ -13,6 +13,9 @@ const rows = {
   time: { el: document.getElementById("line-time"), tiles: [], tokens: [], charset: TIME_CHARS },
 };
 
+const runtimeConfig = {
+  recognitionMinRms: null,
+};
 
 function tokenize(text) {
   return Array.from(String(text || "").replaceAll("️", ""));
@@ -190,11 +193,19 @@ function statusParts(data) {
   return parts.length ? parts.join(" + ") : (data.status || "Waiting");
 }
 
+function numericLabel(value, digits = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "--";
+  return n.toFixed(digits);
+}
+
 function updateStats(data) {
   const total = Number(data.shazam_request_count || 0);
   const rpm = Number(data.shazam_requests_per_min || 0);
+  const rms = numericLabel(data.rms, 1);
+  const threshold = numericLabel(runtimeConfig.recognitionMinRms, 1);
   document.getElementById("stats").textContent =
-    `Status: ${statusParts(data)} | Shazam Requests: ${total} reqs, ${rpm.toFixed(1)} reqs/m`;
+    `Status: ${statusParts(data)} | RMS: ${rms} | Silence Threshold: ${threshold} | Shazam Requests: ${total} reqs, ${rpm.toFixed(1)} reqs/m`;
 }
 
 function updateDisplay(data) {
@@ -215,6 +226,17 @@ function updateDisplay(data) {
   updateStats(data);
 }
 
+
+async function fetchConfig() {
+  try {
+    const res = await fetch(`/api/config?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    runtimeConfig.recognitionMinRms = Number(data.recognition_min_rms);
+  } catch (err) {
+    runtimeConfig.recognitionMinRms = null;
+  }
+}
 
 async function fetchState() {
   try {
@@ -244,8 +266,9 @@ function init() {
     shazam_request_count: 0,
     shazam_requests_per_min: 0,
   });
-  fetchState();
+  fetchConfig().finally(fetchState);
   setInterval(fetchState, 2000);
+  setInterval(fetchConfig, 30000);
 }
 
 document.addEventListener("DOMContentLoaded", init);
