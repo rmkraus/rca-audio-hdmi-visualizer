@@ -18,13 +18,20 @@ class AudioChunk(object):
         self.duration_seconds = duration_seconds
 
 
+class AudioActivityEvent(object):
+    def __init__(self, kind, at, rms, gate_seconds):
+        self.kind = kind
+        self.at = at
+        self.rms = rms
+        self.gate_seconds = gate_seconds
+
+
 class AudioInterface(object):
     """Continuous audio capture and activity detector.
 
     The interface owns one long-running parec stream. A reader thread pulls fixed
-    chunks, computes RMS, publishes chunks through a condition-protected deque,
-    and sets audio_started/audio_stopped events after gated consecutive audio or
-    silence windows.
+    chunks, computes RMS, stores chunks in a rolling buffer, and emits start/stop
+    activity events after configurable consecutive audio/silence gates.
     """
 
     def __init__(
@@ -34,6 +41,9 @@ class AudioInterface(object):
         channels=DEFAULT_CHANNELS,
         min_rms=DEFAULT_MIN_RMS,
         gate_seconds=5.0,
+        start_gate_seconds=None,
+        stop_gate_seconds=None,
+        preroll_seconds=2.0,
         chunk_seconds=0.5,
         max_queue_seconds=90.0,
     ):
@@ -41,17 +51,22 @@ class AudioInterface(object):
         self.sample_rate = int(sample_rate)
         self.channels = int(channels)
         self.min_rms = float(min_rms)
-        self.gate_seconds = float(gate_seconds)
+        self.start_gate_seconds = float(start_gate_seconds if start_gate_seconds is not None else gate_seconds)
+        self.stop_gate_seconds = float(stop_gate_seconds if stop_gate_seconds is not None else gate_seconds)
+        self.preroll_seconds = float(preroll_seconds)
         self.chunk_seconds = float(chunk_seconds)
         self.bytes_per_second = self.sample_rate * self.channels * SAMPLE_WIDTH_BYTES
         self.chunk_bytes = max(1, int(self.bytes_per_second * self.chunk_seconds))
         self.max_chunks = max(1, int(float(max_queue_seconds) / self.chunk_seconds))
+        self.preroll_chunks = max(0, int(round(self.preroll_seconds / self.chunk_seconds)))
 
         self.audio_started = threading.Event()
         self.audio_stopped = threading.Event()
         self.audio_stopped.set()
 
         self._chunks = deque()
+        self._preroll = deque()
+        self._events = deque()
         self._condition = threading.Condition()
         self._stop_event = threading.Event()
         self._thread = None
@@ -59,9 +74,19 @@ class AudioInterface(object):
         self._error = None
         self._consecutive_audio = 0.0
         self._consecutive_silence = 0.0
+        self._is_audio_active = False
 
     @classmethod
-    def from_config(cls, config, min_rms=None, gate_seconds=5.0, chunk_seconds=0.5):
+    def from_config(
+        cls,
+        config,
+        min_rms=None,
+        gate_seconds=5.0,
+        start_gate_seconds=None,
+        stop_gate_seconds=None,
+        preroll_seconds=2.0,
+        chunk_seconds=0.5,
+    ):
         user = config.str("VISUALIZER_USER", "")
         source = config.str("RECOGNITION_SOURCE", "") or get_audio_device(
             "source", config.str("SOURCE_MATCH", "usb"), user
@@ -84,6 +109,9 @@ class AudioInterface(object):
             channels=channels,
             min_rms=threshold,
             gate_seconds=gate_seconds,
+            start_gate_seconds=start_gate_seconds,
+            stop_gate_seconds=stop_gate_seconds,
+            preroll_seconds=preroll_seconds,
             chunk_seconds=chunk_seconds,
         )
 
@@ -109,8 +137,6 @@ class AudioInterface(object):
             try:
                 self._process.wait(timeout=5)
             except TypeError:
-                # Python 3.6 supports timeout, but keep this harmless for older
-                # interpreters if this code is reused elsewhere.
                 self._process.wait()
             except subprocess.TimeoutExpired:
                 self._process.kill()
@@ -140,35 +166,48 @@ class AudioInterface(object):
                 self._update_activity(rms, duration)
                 with self._condition:
                     self._chunks.append(chunk)
+                    self._preroll.append(chunk)
                     while len(self._chunks) > self.max_chunks:
                         self._chunks.popleft()
+                    while len(self._preroll) > self.preroll_chunks:
+                        self._preroll.popleft()
                     self._condition.notify_all()
         except Exception as exc:
             self._error = exc
             with self._condition:
                 self._condition.notify_all()
 
+    def _emit_event(self, kind, rms, gate_seconds):
+        event = AudioActivityEvent(kind, time.time(), rms, gate_seconds)
+        self._events.append(event)
+
     def _update_activity(self, rms, duration):
         if float(rms) >= self.min_rms:
             self._consecutive_audio += duration
             self._consecutive_silence = 0.0
-            if self._consecutive_audio >= self.gate_seconds:
+            if (not self._is_audio_active) and self._consecutive_audio >= self.start_gate_seconds:
+                self._is_audio_active = True
                 self.audio_started.set()
                 self.audio_stopped.clear()
+                self._emit_event("started", rms, self.start_gate_seconds)
         else:
             self._consecutive_silence += duration
             self._consecutive_audio = 0.0
-            if self._consecutive_silence >= self.gate_seconds:
+            if self._is_audio_active and self._consecutive_silence >= self.stop_gate_seconds:
+                self._is_audio_active = False
                 self.audio_stopped.set()
                 self.audio_started.clear()
+                self._emit_event("stopped", rms, self.stop_gate_seconds)
 
     def raise_if_failed(self):
         if self._error is not None:
             raise RuntimeError(str(self._error))
 
-    def clear_buffer(self):
+    def clear_buffer(self, keep_preroll=False):
         with self._condition:
             self._chunks.clear()
+            if keep_preroll:
+                self._chunks.extend(self._preroll)
 
     def grab_chunk(self, timeout=None):
         deadline = None if timeout is None else time.time() + float(timeout)
@@ -184,15 +223,39 @@ class AudioInterface(object):
                     self._condition.wait(min(0.5, remaining))
             return self._chunks.popleft()
 
+    def wait_for_event(self, kinds=None, timeout=None):
+        if kinds is not None:
+            kinds = set(kinds)
+        deadline = None if timeout is None else time.time() + float(timeout)
+        with self._condition:
+            while True:
+                self.raise_if_failed()
+                for index, event in enumerate(self._events):
+                    if kinds is None or event.kind in kinds:
+                        # deque has no pop(index); rotate to remove exactly one.
+                        self._events.rotate(-index)
+                        found = self._events.popleft()
+                        self._events.rotate(index)
+                        return found
+                if deadline is None:
+                    self._condition.wait(0.5)
+                else:
+                    remaining = deadline - time.time()
+                    if remaining <= 0:
+                        return None
+                    self._condition.wait(min(0.5, remaining))
+
     def wait_for_audio(self, timeout=None):
-        ok = self.audio_started.wait(timeout)
-        self.raise_if_failed()
-        return ok
+        if self.audio_started.is_set():
+            return True
+        event = self.wait_for_event(kinds=["started"], timeout=timeout)
+        return event is not None or self.audio_started.is_set()
 
     def wait_for_silence(self, timeout=None):
-        ok = self.audio_stopped.wait(timeout)
-        self.raise_if_failed()
-        return ok
+        if self.audio_stopped.is_set():
+            return True
+        event = self.wait_for_event(kinds=["stopped"], timeout=timeout)
+        return event is not None or self.audio_stopped.is_set()
 
     def record_wav(self, seconds, output_path):
         output_path.parent.mkdir(parents=True, exist_ok=True)
