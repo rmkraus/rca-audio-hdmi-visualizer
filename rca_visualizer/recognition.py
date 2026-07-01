@@ -21,6 +21,7 @@ from .defaults import (
     DEFAULT_PROGRESS_OFFSET_PADDING_SECONDS,
     DEFAULT_PROGRESS_RESUME_PERCENT,
     DEFAULT_RATELIMIT_BACKOFF_SECONDS,
+    DEFAULT_RECOGNIZED_SILENCE_CHECK_GAP_SECONDS,
     DEFAULT_RATELIMIT_REQUESTS_PER_MIN,
     DEFAULT_SAMPLE_RATE,
     DEFAULT_SAMPLE_SECONDS,
@@ -334,6 +335,70 @@ def sleep_until_progress(result, target_percent, missing_duration_sleep=60, max_
     return sleep_for
 
 
+def monitor_recognized_silence_wait(
+    config,
+    state_path,
+    current_result,
+    wait_seconds,
+    sample_seconds,
+    min_rms,
+    check_gap_seconds,
+    shazam_request_count,
+    shazam_request_times,
+):
+    deadline = time.monotonic() + max(0, float(wait_seconds or 0))
+    result = current_result
+    gap = max(0, float(check_gap_seconds or 0))
+
+    while time.monotonic() < deadline:
+        listening_result = copy_display_result(
+            result,
+            status="recognized",
+            playback_status="playing",
+            listening=True,
+            message="checking for silence with %s second sample" % sample_seconds,
+        )
+        set_metrics(listening_result, shazam_request_count, request_rate(shazam_request_times))
+        write_state(state_path, listening_result)
+
+        with tempfile.TemporaryDirectory(prefix="rca-silence-check-") as tmpdir:
+            sample = Path(tmpdir) / "sample.wav"
+            record_sample(config, sample, sample_seconds)
+            rms, duration = wav_stats(sample)
+
+        if rms < min_rms:
+            stopped = RecognitionResult(
+                status="stopped",
+                playback_status="stopped",
+                recognized_at=now_iso(),
+                duration=duration,
+                rms=rms,
+                message="stopped after quiet monitor sample; RMS %.1f below threshold %.1f" % (rms, min_rms),
+            )
+            set_metrics(stopped, shazam_request_count, request_rate(shazam_request_times))
+            write_state(state_path, stopped)
+            return stopped
+
+        result = copy_display_result(
+            result,
+            status="recognized",
+            playback_status="playing",
+            listening=False,
+            message="audio still present; RMS %.1f above threshold %.1f" % (rms, min_rms),
+        )
+        result.duration = duration
+        result.rms = rms
+        set_metrics(result, shazam_request_count, request_rate(shazam_request_times))
+        write_state(state_path, result)
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(gap, remaining))
+
+    return result
+
+
 def identify_once(config):
     seconds = config.int("RECOGNITION_SAMPLE_SECONDS", DEFAULT_SAMPLE_SECONDS)
     min_rms = config.float("RECOGNITION_MIN_RMS", DEFAULT_MIN_RMS)
@@ -378,6 +443,10 @@ def daemon(config):
     max_recheck_wait = config.int("RECOGNITION_MAX_RECHECK_WAIT_SECONDS", DEFAULT_MAX_RECHECK_WAIT_SECONDS)
     missing_duration_recheck = config.int("RECOGNITION_MISSING_DURATION_RECHECK_SECONDS", DEFAULT_MISSING_DURATION_RECHECK_SECONDS)
     progress_padding = config.float("RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS", DEFAULT_PROGRESS_OFFSET_PADDING_SECONDS)
+    recognized_silence_gap = config.int(
+        "RECOGNITION_RECOGNIZED_SILENCE_CHECK_GAP_SECONDS",
+        DEFAULT_RECOGNIZED_SILENCE_CHECK_GAP_SECONDS,
+    )
 
     no_match_count = 0
     playback_status = "stopped"
@@ -457,12 +526,25 @@ def daemon(config):
                         result.progress_start_seconds = progress_start_seconds(result, progress_padding)
                         write_state(state_path, result)
                         last_display_result = result
-                        sleep_for = sleep_until_progress(
+                        wait_for_recheck = sleep_until_progress(
                             result,
                             progress_resume_percent,
                             missing_duration_sleep=missing_duration_recheck,
                             max_wait=max_recheck_wait,
                         )
+                        last_display_result = monitor_recognized_silence_wait(
+                            config,
+                            state_path,
+                            result,
+                            wait_for_recheck,
+                            sample_seconds,
+                            min_rms,
+                            recognized_silence_gap,
+                            shazam_request_count,
+                            shazam_request_times,
+                        )
+                        result = last_display_result
+                        playback_status = last_display_result.playback_status or playback_status
                     elif result.status in {"no_match", "error"}:
                         no_match_count += 1
                         if last_display_result.status == "recognized":
