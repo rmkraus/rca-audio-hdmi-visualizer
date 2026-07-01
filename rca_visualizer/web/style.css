@@ -50,7 +50,7 @@ body::after {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(circle at 50% 44%, transparent 48%, rgba(0,0,0,0.48) 100%);
+  background: radial-gradient(circle at 50% 44%, transparent 48%, rgba(0,0,0,0.34) 100%);
   z-index: 20;
 }
 
@@ -266,6 +266,20 @@ body::after {
   border-radius: 3px;
   background: rgba(255,255,255,calc(0.03 + var(--glow) * 0.38));
   filter: blur(0.4px);
+}
+
+.bulb-progress[data-complete="true"] .progress-bulb {
+  filter: brightness(1.18) saturate(1.08);
+}
+
+.bulb-progress[data-complete="true"] .progress-bulb:last-child {
+  box-shadow:
+    0 0 8px rgba(255,190,70,0.95),
+    0 0 18px rgba(255,145,20,0.45),
+    0 0 28px rgba(255,145,20,0.24),
+    inset 0 1px 4px rgba(255,255,255,0.75),
+    inset 0 -2px 4px rgba(0,0,0,0.78),
+    0 0 0 1px #050504;
 }
 
 .meter-stack {

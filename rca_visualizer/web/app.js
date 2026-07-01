@@ -161,6 +161,12 @@ function setWrappedText(firstRow, secondRow, text) {
 
 function setProgressBulbs(row, ratio) {
   const progress = Math.max(0, Math.min(1, Number(ratio) || 0));
+  if (progress >= 0.995) {
+    row.el.dataset.complete = "true";
+    row.tiles.forEach(bulb => bulb.style.setProperty("--glow", "1.000"));
+    return;
+  }
+  row.el.dataset.complete = "false";
   const scaled = progress * row.tiles.length;
   const rampWidth = 5;
   const warmAhead = 2;
