@@ -9,6 +9,7 @@ const DIGIT_CHARS = Array.from("0123456789");
 
 const rows = {
   track: { el: document.getElementById("line-track"), tiles: [], tokens: [], charset: TEXT_CHARS },
+  track2: { el: document.getElementById("line-track-2"), tiles: [], tokens: [], charset: TEXT_CHARS },
   artist: { el: document.getElementById("line-artist"), tiles: [], tokens: [], charset: TEXT_CHARS },
   record: { el: document.getElementById("line-record"), tiles: [], tokens: [], charset: TEXT_CHARS },
   progress: { el: document.getElementById("line-progress"), tiles: [], tokens: [], charset: TEXT_CHARS },
@@ -123,6 +124,12 @@ function setRow(row, text, len = DISPLAY_LEN) {
   });
 }
 
+function setWrappedText(firstRow, secondRow, text) {
+  const tokens = tokenize(text);
+  setRow(firstRow, tokens.slice(0, DISPLAY_LEN).join(""), DISPLAY_LEN);
+  setRow(secondRow, tokens.slice(DISPLAY_LEN, DISPLAY_LEN * 2).join(""), DISPLAY_LEN);
+}
+
 function parseDate(text) {
   if (!text) return null;
   const d = new Date(text);
@@ -185,7 +192,7 @@ function updateStats(data) {
 
 function updateDisplay(data) {
   const good = data.status === "recognized";
-  setRow(rows.track, good ? `${data.title || ""}` : "");
+  setWrappedText(rows.track, rows.track2, good ? `${data.title || ""}` : "");
   setRow(rows.artist, good ? `${data.artist || ""}` : "");
   setRow(rows.record, good ? `${data.album || ""}` : "");
 
@@ -212,6 +219,7 @@ async function fetchState() {
 
 function init() {
   buildRow(rows.track);
+  buildRow(rows.track2);
   buildRow(rows.artist);
   buildRow(rows.record);
   buildRow(rows.currentMm, 2, "digits");
@@ -222,7 +230,7 @@ function init() {
   updateDisplay({
     status: "recognized",
     playback_status: "playing",
-    title: "How Lucky",
+    title: "Please Don't Bury Me (2020 Remaster)",
     artist: "John Prine",
     album: "Pink Cadillac",
     track_duration_ms: 219000,

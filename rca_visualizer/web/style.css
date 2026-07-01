@@ -147,7 +147,7 @@ html, body {
     0 1px 0 rgba(255,255,255,0.04);
 }
 .time-row {
-  border-top: 8px solid #000;
+  border-top: 3px solid #000;
 }
 .time-display-frame {
   display: grid;
