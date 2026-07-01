@@ -325,7 +325,6 @@ body::after {
   position: absolute;
   inset: 0;
   background:
-    repeating-conic-gradient(from 232deg at 50% 107%, rgba(61,31,7,0.50) 0 0.7deg, transparent 0.7deg 7deg),
     radial-gradient(ellipse at 50% 112%, transparent 0 42%, rgba(83,40,11,0.18) 43% 43.7%, transparent 44%);
   opacity: 0.72;
 }
