@@ -1,178 +1,24 @@
 import argparse
 import json
-import os
 import shlex
 import subprocess
-import sys
 import tempfile
 import time
-import wave
-from datetime import datetime, timezone
 from pathlib import Path
 
-from .metadata import empty_metadata
+from .audio_interface import get_audio_device, user_runtime_env_args
 from .config import RuntimeConfig
 from .defaults import (
     DEFAULT_CHANNELS,
-    DEFAULT_MAX_RECHECK_WAIT_SECONDS,
     DEFAULT_MIN_RMS,
-    DEFAULT_MISSING_DURATION_RECHECK_SECONDS,
-    DEFAULT_NO_MATCH_BACKOFF_SECONDS,
-    DEFAULT_NO_MATCH_LIMIT,
     DEFAULT_PROGRESS_OFFSET_PADDING_SECONDS,
-    DEFAULT_PROGRESS_RESUME_PERCENT,
-    DEFAULT_RATELIMIT_BACKOFF_SECONDS,
-    DEFAULT_RATELIMIT_REQUESTS_PER_MIN,
     DEFAULT_SAMPLE_RATE,
     DEFAULT_SAMPLE_SECONDS,
     DEFAULT_STATE_PATH,
 )
-
-SHAZAM_LOOKUP_SCRIPT = "/opt/rca-hdmi-visualizer/rca_visualizer/shazam_lookup.py"
-SHAZAM_VENV_PYTHON = "/opt/rca-hdmi-visualizer/shazam-venv/bin/python"
-
-
-class RecognitionResult:
-    def __init__(
-        self,
-        status,
-        title="",
-        artist="",
-        album="",
-        score=0.0,
-        provider="shazam",
-        recognized_at="",
-        duration=0,
-        acoustid="",
-        musicbrainz_recording_id="",
-        track_duration_ms=0,
-        match_offset_seconds=None,
-        progress_start_seconds=None,
-        progress_padding_seconds=0,
-        playback_status="",
-        listening=False,
-        backing_off=False,
-        ratelimit=False,
-        shazam_request_count=0,
-        shazam_requests_per_min=0.0,
-        rms=None,
-        raw=None,
-        message="",
-    ):
-        self.status = status
-        self.title = title
-        self.artist = artist
-        self.album = album
-        self.score = score
-        self.provider = provider
-        self.recognized_at = recognized_at
-        self.duration = duration
-        # Kept for backward-compatible state JSON. For Shazam this stores the
-        # Shazam track key, not an AcoustID UUID.
-        self.acoustid = acoustid
-        self.musicbrainz_recording_id = musicbrainz_recording_id
-        self.track_duration_ms = int(track_duration_ms or 0)
-        self.match_offset_seconds = match_offset_seconds
-        self.progress_start_seconds = progress_start_seconds
-        self.progress_padding_seconds = progress_padding_seconds
-        self.playback_status = playback_status
-        self.listening = bool(listening)
-        self.backing_off = bool(backing_off)
-        self.ratelimit = bool(ratelimit)
-        self.shazam_request_count = int(shazam_request_count or 0)
-        self.shazam_requests_per_min = float(shazam_requests_per_min or 0.0)
-        self.rms = rms
-        self.raw = raw
-        self.message = message
-
-    def to_dict(self):
-        metadata = empty_metadata(status=self.status, playback_status=self.playback_status)
-        metadata.update({
-            "status": self.status,
-            "playback_status": self.playback_status,
-            "listening": self.listening,
-            "backing_off": self.backing_off,
-            "ratelimit": self.ratelimit,
-            "shazam_request_count": self.shazam_request_count,
-            "shazam_requests_per_min": self.shazam_requests_per_min,
-            "title": self.title,
-            "artist": self.artist,
-            "album": self.album,
-            "score": self.score,
-            "provider": self.provider,
-            "recognized_at": self.recognized_at,
-            "duration": self.duration,
-            "rms": self.rms,
-            "acoustid": self.acoustid,
-            "musicbrainz_recording_id": self.musicbrainz_recording_id,
-            "track_duration_ms": self.track_duration_ms,
-            "match_offset_seconds": self.match_offset_seconds,
-            "progress_start_seconds": self.progress_start_seconds,
-            "progress_padding_seconds": self.progress_padding_seconds,
-            "raw": self.raw,
-            "message": self.message,
-        })
-        return metadata
-
-
-def now_iso():
-    return datetime.now(timezone.utc).isoformat()
-
-
-def run(cmd, timeout=None):
-    return subprocess.run(
-        cmd,
-        universal_newlines=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=timeout,
-        check=False,
-    )
-
-
-def user_runtime_env_args(user):
-    if not user:
-        return []
-    uid_result = run(["id", "-u", user])
-    if uid_result.returncode != 0:
-        raise RuntimeError(uid_result.stderr.strip() or "could not resolve uid for %s" % user)
-    runtime_dir = "/run/user/%s" % uid_result.stdout.strip()
-    return [
-        "env",
-        "XDG_RUNTIME_DIR=%s" % runtime_dir,
-        "DBUS_SESSION_BUS_ADDRESS=unix:path=%s/bus" % runtime_dir,
-    ]
-
-
-def pactl_user_args(user):
-    if not user:
-        return ["pactl"]
-    return ["runuser", "-u", user, "--"] + user_runtime_env_args(user) + ["pactl"]
-
-
-def get_audio_device(kind, match, user):
-    assert kind in {"source", "sink"}
-    default_cmd = pactl_user_args(user) + ["get-default-%s" % kind]
-    default = run(default_cmd).stdout.strip()
-    if not match:
-        return default
-
-    list_kind = "sources" if kind == "source" else "sinks"
-    result = run(pactl_user_args(user) + ["list", list_kind])
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "pactl list %s failed" % list_kind)
-
-    current_name = ""
-    needle = match.lower()
-    for line in result.stdout.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("Name:"):
-            current_name = stripped.split(None, 1)[1]
-        elif stripped.startswith("Description:") and current_name:
-            desc = stripped.split(None, 1)[1]
-            if needle in (current_name + " " + desc).lower():
-                return current_name
-    return default
+from .recognition_provider import identify_with_shazam, wav_stats
+from .recognition_state import playback_recheck_timeout, progress_start_seconds, write_state
+from .recognition_types import RecognitionResult
 
 
 def record_sample(config, output_path, seconds):
@@ -221,123 +67,9 @@ def record_sample(config, output_path, seconds):
     return output_path
 
 
-def wav_stats(path):
-    import audioop
-
-    with wave.open(str(path), "rb") as wav:
-        width = wav.getsampwidth()
-        frames = wav.getnframes()
-        rate = wav.getframerate()
-        total_rms = 0.0
-        chunks = 0
-        while True:
-            data = wav.readframes(rate)
-            if not data:
-                break
-            total_rms += audioop.rms(data, width)
-            chunks += 1
-    return total_rms / max(chunks, 1), int(round(float(frames) / float(rate or 1)))
-
-
-def write_state(path, result):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(result.to_dict(), indent=2, sort_keys=True) + "\n")
-    os.replace(str(tmp), str(path))
-
-
-def set_metrics(result, request_count=0, requests_per_min=0.0):
-    result.shazam_request_count = int(request_count or 0)
-    result.shazam_requests_per_min = float(requests_per_min or 0.0)
-    return result
-
-
-def request_rate(request_times, window_seconds=60):
-    now = time.time()
-    while request_times and request_times[0] < now - float(window_seconds):
-        request_times.pop(0)
-    return float(len(request_times))
-
-
-def clear_track_fields(result):
-    result.title = ""
-    result.artist = ""
-    result.album = ""
-    result.track_duration_ms = 0
-    result.progress_start_seconds = None
-    result.match_offset_seconds = None
-    return result
-
-
-def copy_display_result(base, status, playback_status, listening=False, backing_off=False, ratelimit=False, message=""):
-    base = base or RecognitionResult(status="waiting")
-    return RecognitionResult(
-        status=status,
-        title=base.title,
-        artist=base.artist,
-        album=base.album,
-        score=base.score,
-        provider=base.provider,
-        recognized_at=base.recognized_at,
-        duration=base.duration,
-        acoustid=base.acoustid,
-        musicbrainz_recording_id=base.musicbrainz_recording_id,
-        track_duration_ms=base.track_duration_ms,
-        match_offset_seconds=base.match_offset_seconds,
-        progress_start_seconds=base.progress_start_seconds,
-        progress_padding_seconds=base.progress_padding_seconds,
-        playback_status=playback_status,
-        listening=listening,
-        backing_off=backing_off,
-        ratelimit=ratelimit,
-        rms=base.rms,
-        raw=base.raw,
-        message=message or base.message,
-    )
-
-
-def identify_with_shazam(path):
-    if not Path(SHAZAM_VENV_PYTHON).exists() or not Path(SHAZAM_LOOKUP_SCRIPT).exists():
-        return RecognitionResult(
-            status="error",
-            provider="shazam",
-            recognized_at=now_iso(),
-            message="Shazam recognizer is not installed",
-        )
-    result = run([SHAZAM_VENV_PYTHON, SHAZAM_LOOKUP_SCRIPT, str(path)], timeout=90)
-    if result.returncode != 0:
-        return RecognitionResult(
-            status="error",
-            provider="shazam",
-            recognized_at=now_iso(),
-            message=(result.stderr.strip() or result.stdout.strip() or "Shazam lookup failed"),
-        )
-    data = json.loads(result.stdout)
-    data["recognized_at"] = now_iso()
-    return RecognitionResult(**data)
-
-
-def progress_start_seconds(result, padding_seconds):
-    if result.match_offset_seconds is None:
-        return None
-    try:
-        return float(result.match_offset_seconds) + float(result.duration or 0) + float(padding_seconds)
-    except (TypeError, ValueError):
-        return None
-
-
-def sleep_until_progress(result, target_percent, missing_duration_sleep=60, max_wait=150):
-    if not result.track_duration_ms or result.progress_start_seconds is None:
-        return int(missing_duration_sleep)
-    track_seconds = float(result.track_duration_ms) / 1000.0
-    target_seconds = track_seconds * (float(target_percent) / 100.0)
-    sleep_for = max(0, int(round(target_seconds - float(result.progress_start_seconds))))
-    if max_wait and max_wait > 0:
-        sleep_for = min(sleep_for, int(max_wait))
-    return sleep_for
-
-
 def identify_once(config):
+    from .recognition_state import now_iso
+
     seconds = config.int("RECOGNITION_SAMPLE_SECONDS", DEFAULT_SAMPLE_SECONDS)
     min_rms = config.float("RECOGNITION_MIN_RMS", DEFAULT_MIN_RMS)
     padding = config.float("RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS", DEFAULT_PROGRESS_OFFSET_PADDING_SECONDS)
@@ -366,39 +98,6 @@ def identify_once(config):
             result.progress_padding_seconds = padding
             result.progress_start_seconds = progress_start_seconds(result, padding)
         return result
-
-
-def playback_recheck_timeout(result, progress_resume_percent, missing_duration_recheck, max_recheck_wait):
-    return sleep_until_progress(
-        result,
-        progress_resume_percent,
-        missing_duration_sleep=missing_duration_recheck,
-        max_wait=max_recheck_wait,
-    )
-
-
-def wait_for_playback_stop(audio, timeout_seconds):
-    if timeout_seconds is None:
-        return audio.wait_for_silence(timeout=None)
-    return audio.wait_for_silence(timeout=max(0, float(timeout_seconds)))
-
-
-def log_result(result):
-    print(
-        "%s/%s: %s - %s provider=%s score=%.3f rms=%s reqs=%s rpm=%.1f %s" % (
-            result.playback_status or "unknown",
-            result.status,
-            result.artist,
-            result.title,
-            result.provider,
-            result.score,
-            "%.1f" % result.rms if result.rms is not None else "",
-            result.shazam_request_count,
-            result.shazam_requests_per_min,
-            result.message,
-        ),
-        flush=True,
-    )
 
 
 def daemon(config):
@@ -436,3 +135,15 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+# Backward-compatible aliases for external imports from older installs/tests.
+from .recognition_provider import run, wav_stats  # noqa: E402,F401
+from .recognition_state import (  # noqa: E402,F401
+    log_result,
+    now_iso,
+    request_rate,
+    set_metrics,
+    sleep_until_progress,
+    wait_for_playback_stop,
+)
+from .recognition_types import clear_track_fields, copy_display_result  # noqa: E402,F401

@@ -5,6 +5,17 @@ import time
 from pathlib import Path
 
 from .audio_interface import AudioInterface
+from .recognition_provider import identify_with_shazam, wav_stats
+from .recognition_state import (
+    log_result,
+    now_iso,
+    progress_start_seconds,
+    request_rate,
+    set_metrics,
+    sleep_until_progress,
+    write_state,
+)
+from .recognition_types import RecognitionResult, clear_track_fields, copy_display_result
 from .defaults import (
     DEFAULT_AUDIO_GATE_SECONDS,
     DEFAULT_AUDIO_PREROLL_SECONDS,
@@ -138,8 +149,6 @@ class DetectionLoop(object):
         self.actively_detecting.clear()
 
     def _run_loop(self):
-        from .recognition import RecognitionResult, request_rate, set_metrics, write_state
-
         self.audio = AudioInterface.from_config(
             self.config,
             min_rms=self.min_rms,
@@ -175,8 +184,6 @@ class DetectionLoop(object):
                 self.audio.stop()
 
     def _playing_loop(self):
-        from .recognition import RecognitionResult, request_rate, set_metrics, write_state
-
         no_match_count = 0
         playback_status = "playing"
 
@@ -306,8 +313,6 @@ class DetectionLoop(object):
         self.last_display_result = stopped_result
 
     def _record_and_identify_sample(self, playback_status):
-        from .recognition import RecognitionResult, identify_with_shazam, request_rate, set_metrics, wav_stats
-
         with tempfile.TemporaryDirectory(prefix="rca-recognition-") as tmpdir:
             sample = Path(tmpdir) / "sample.wav"
             self.audio.record_wav(self.sample_seconds, sample)
@@ -338,8 +343,6 @@ class DetectionLoop(object):
         return self.audio.wait_for_silence(timeout=max(0, float(timeout or 0)))
 
     def _playback_recheck_timeout(self, result):
-        from .recognition import sleep_until_progress
-
         wait_for = sleep_until_progress(
             result,
             self.progress_resume_percent,
@@ -350,8 +353,6 @@ class DetectionLoop(object):
 
     @staticmethod
     def _copy_display_result(base, status, playback_status, listening=False, backing_off=False, ratelimit=False, message=""):
-        from .recognition import copy_display_result
-
         return copy_display_result(
             base,
             status=status,
@@ -364,36 +365,16 @@ class DetectionLoop(object):
 
     @staticmethod
     def _clear_track_fields(result):
-        from .recognition import clear_track_fields
-
         return clear_track_fields(result)
 
     @staticmethod
     def _progress_start_seconds(result, padding):
-        from .recognition import progress_start_seconds
-
         return progress_start_seconds(result, padding)
 
     @staticmethod
     def _now_iso():
-        from .recognition import now_iso
-
         return now_iso()
 
     @staticmethod
     def _log_result(result):
-        print(
-            "%s/%s: %s - %s provider=%s score=%.3f rms=%s reqs=%s rpm=%.1f %s" % (
-                result.playback_status or "unknown",
-                result.status,
-                result.artist,
-                result.title,
-                result.provider,
-                result.score,
-                "%.1f" % result.rms if result.rms is not None else "",
-                result.shazam_request_count,
-                result.shazam_requests_per_min,
-                result.message,
-            ),
-            flush=True,
-        )
+        return log_result(result)

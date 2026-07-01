@@ -8,8 +8,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from rca_visualizer.audio_interface import AudioChunk, AudioInterface
+from rca_visualizer import detection as detection_module
 from rca_visualizer.detection import DetectionLoop
-from rca_visualizer.recognition import RecognitionResult
+from rca_visualizer.recognition_types import RecognitionResult
 
 
 class FakeConfig(object):
@@ -115,6 +116,88 @@ def test_detection_loop_minimum_recheck_wait():
     assert loop._playback_recheck_timeout(result) == 7
 
 
+class FakeDetectionAudio(object):
+    def __init__(self, stop_after_timeouts=1):
+        self.recorded = []
+        self.silence_waits = []
+        self.stop_after_timeouts = stop_after_timeouts
+
+    def record_wav(self, seconds, output_path):
+        self.recorded.append((seconds, output_path))
+        output_path.write_bytes(b"fake wav")
+
+    def wait_for_silence(self, timeout=None):
+        self.silence_waits.append(timeout)
+        return len(self.silence_waits) >= self.stop_after_timeouts
+
+
+def test_detection_loop_recognized_then_silence_clears_state():
+    loop = DetectionLoop(FakeConfig({"RECOGNITION_MIN_RECHECK_WAIT_SECONDS": 1}))
+    loop.audio = FakeDetectionAudio(stop_after_timeouts=1)
+    loop.last_display_result = RecognitionResult(status="stopped", playback_status="stopped")
+    written = []
+
+    original_wav_stats = detection_module.wav_stats
+    original_identify = detection_module.identify_with_shazam
+    original_write_state = detection_module.write_state
+    original_now_iso = detection_module.now_iso
+    try:
+        detection_module.wav_stats = lambda path: (100.0, 12)
+        detection_module.identify_with_shazam = lambda path: RecognitionResult(
+            status="recognized",
+            title="Song",
+            artist="Artist",
+            track_duration_ms=180000,
+            match_offset_seconds=10.0,
+        )
+        detection_module.write_state = lambda path, result: written.append(result.to_dict())
+        detection_module.now_iso = lambda: "2026-07-01T00:00:00+00:00"
+
+        loop._playing_loop()
+    finally:
+        detection_module.wav_stats = original_wav_stats
+        detection_module.identify_with_shazam = original_identify
+        detection_module.write_state = original_write_state
+        detection_module.now_iso = original_now_iso
+
+    assert loop.shazam_request_count == 1
+    assert loop.last_display_result.status == "stopped"
+    assert loop.last_display_result.playback_status == "stopped"
+    assert any(state["status"] == "recognized" and state["title"] == "Song" for state in written)
+    assert written[-1]["status"] == "stopped"
+    assert written[-1]["title"] == ""
+
+
+def test_detection_loop_quiet_sample_does_not_call_shazam():
+    loop = DetectionLoop(FakeConfig({}))
+    loop.audio = FakeDetectionAudio(stop_after_timeouts=1)
+    called = []
+
+    original_wav_stats = detection_module.wav_stats
+    original_identify = detection_module.identify_with_shazam
+    original_write_state = detection_module.write_state
+    try:
+        detection_module.wav_stats = lambda path: (0.0, 12)
+
+        def fail_identify(path):
+            called.append(path)
+            raise AssertionError("Shazam should not run for quiet samples")
+
+        detection_module.identify_with_shazam = fail_identify
+        detection_module.write_state = lambda path, result: None
+        result, duration, rms = loop._record_and_identify_sample("playing")
+    finally:
+        detection_module.wav_stats = original_wav_stats
+        detection_module.identify_with_shazam = original_identify
+        detection_module.write_state = original_write_state
+
+    assert result.status == "stopped"
+    assert duration == 12
+    assert rms == 0.0
+    assert loop.shazam_request_count == 0
+    assert called == []
+
+
 def main():
     tests = [
         test_audio_activity_events_are_gated_once,
@@ -122,6 +205,8 @@ def main():
         test_record_wav_writes_valid_file,
         test_detection_loop_legacy_gate_fallback_and_overrides,
         test_detection_loop_minimum_recheck_wait,
+        test_detection_loop_recognized_then_silence_clears_state,
+        test_detection_loop_quiet_sample_does_not_call_shazam,
     ]
     for test in tests:
         test()
