@@ -49,7 +49,7 @@ RECOGNITION_SAMPLE_SECONDS=12
 RECOGNITION_MIN_RMS=150
 RECOGNITION_SILENCE_WINDOWS_TO_STOP=3
 RECOGNITION_NO_MATCH_LIMIT=3
-RECOGNITION_NO_MATCH_BACKOFF_SECONDS=60
+RECOGNITION_NO_MATCH_BACKOFF_SECONDS=30
 RECOGNITION_PROGRESS_RESUME_PERCENT=95
 RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS=5
 ```
@@ -65,7 +65,7 @@ Meaning:
 - on a match, look up the iTunes track length, show the estimated progress bar,
   and wait until the progress estimate reaches 95% before checking again
 - on no match, check the next sample immediately
-- after 3 consecutive no-match samples, pause for 60 seconds
+- after 3 consecutive no-match samples, pause for 30 seconds
 
 Shazam's match offset is the position where the captured snippet matched the
 track. The overlay estimates current position as:

@@ -2,7 +2,7 @@ import argparse
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from tkinter import BOTH, CENTER, Canvas, Tk, font, ttk
+from tkinter import BOTH, Canvas, Tk, font, ttk
 
 from .config import RuntimeConfig
 
@@ -12,6 +12,10 @@ class OverlayState:
         self,
         status="waiting",
         playback_status="",
+        listening=False,
+        backing_off=False,
+        shazam_request_count=0,
+        shazam_requests_per_min=0.0,
         title="",
         artist="",
         album="",
@@ -25,6 +29,10 @@ class OverlayState:
     ):
         self.status = status
         self.playback_status = playback_status
+        self.listening = bool(listening)
+        self.backing_off = bool(backing_off)
+        self.shazam_request_count = int(shazam_request_count or 0)
+        self.shazam_requests_per_min = float(shazam_requests_per_min or 0.0)
         self.title = title
         self.artist = artist
         self.album = album
@@ -63,75 +71,67 @@ def format_time(seconds):
     return "%d:%02d" % (seconds // 60, seconds % 60)
 
 
+def status_text(state):
+    parts = []
+    if state.playback_status == "playing":
+        parts.append("Playing")
+    elif state.playback_status == "stopped" or state.status == "stopped":
+        parts.append("Stopped")
+    if state.listening or state.status == "listening":
+        parts.append("Listening")
+    if state.backing_off or state.status == "backing_off":
+        parts.append("Backing Off")
+    return " + ".join(parts)
+
+
 class NowPlayingOverlay:
     def __init__(self, config):
         self.config = config
         self.state_path = Path(config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json"))
         self.poll_ms = config.int("OVERLAY_POLL_MSEC", 1000)
-        self.show_unrecognized = config.bool("OVERLAY_SHOW_UNRECOGNIZED", False)
 
         self.root = Tk()
         self.root.title("Now Playing")
         self.root.configure(bg="black")
         self.root.attributes("-fullscreen", True)
         self.root.attributes("-topmost", True)
-        if not self.show_unrecognized:
-            self.root.withdraw()
         try:
-            self.root.attributes("-alpha", config.float("OVERLAY_ALPHA", 0.78))
+            self.root.attributes("-alpha", config.float("OVERLAY_ALPHA", 1.0))
         except Exception:
             pass
         self.root.bind("<Escape>", lambda _event: self.root.destroy())
         self.root.bind("q", lambda _event: self.root.destroy())
 
         width = max(self.root.winfo_screenwidth(), 1280)
-        title_size = max(42, min(92, width // 18))
-        artist_size = max(28, min(58, width // 28))
-        meta_size = max(18, min(34, width // 48))
-
-        self.title_font = font.Font(family="DejaVu Sans", size=title_size, weight="bold")
-        self.artist_font = font.Font(family="DejaVu Sans", size=artist_size, weight="normal")
-        self.meta_font = font.Font(family="DejaVu Sans", size=meta_size, weight="normal")
+        self.normal_font = font.Font(family="DejaVu Sans", size=28, weight="normal")
+        self.line_height = 44
+        self.left = 64
+        self.top = 56
 
         style = ttk.Style()
         style.configure("Overlay.TFrame", background="black")
-        style.configure("Title.TLabel", background="black", foreground="white")
-        style.configure("Artist.TLabel", background="black", foreground="#e6e6e6")
-        style.configure("Meta.TLabel", background="black", foreground="#b8b8b8")
+        style.configure("Text.TLabel", background="black", foreground="white")
 
-        self.frame = ttk.Frame(self.root, style="Overlay.TFrame", padding=48)
+        self.frame = ttk.Frame(self.root, style="Overlay.TFrame", padding=0)
         self.frame.pack(fill=BOTH, expand=True)
 
-        self.title_label = ttk.Label(
-            self.frame,
-            text="Listening…",
-            style="Title.TLabel",
-            font=self.title_font,
-            anchor=CENTER,
-            justify=CENTER,
-            wraplength=int(width * 0.86),
-        )
-        self.artist_label = ttk.Label(
-            self.frame,
-            text="Waiting for a recognized record",
-            style="Artist.TLabel",
-            font=self.artist_font,
-            anchor=CENTER,
-            justify=CENTER,
-            wraplength=int(width * 0.86),
-        )
-        self.meta_label = ttk.Label(
-            self.frame,
-            text="",
-            style="Meta.TLabel",
-            font=self.meta_font,
-            anchor=CENTER,
-            justify=CENTER,
-            wraplength=int(width * 0.86),
-        )
+        self.labels = []
+        for i in range(5):
+            label = ttk.Label(
+                self.frame,
+                text="",
+                style="Text.TLabel",
+                font=self.normal_font,
+                anchor="w",
+                justify="left",
+                wraplength=int(width * 0.85),
+            )
+            label.place(x=self.left, y=self.top + i * self.line_height)
+            self.labels.append(label)
+
         self.progress_canvas = Canvas(
             self.frame,
-            width=int(width * 0.68),
+            width=int(width * 0.55),
             height=26,
             bg="#202020",
             bd=0,
@@ -140,17 +140,12 @@ class NowPlayingOverlay:
         self.time_label = ttk.Label(
             self.frame,
             text="",
-            style="Meta.TLabel",
-            font=self.meta_font,
-            anchor=CENTER,
-            justify=CENTER,
+            style="Text.TLabel",
+            font=self.normal_font,
+            anchor="w",
+            justify="left",
         )
-
-        self.title_label.place(relx=0.5, rely=0.36, anchor=CENTER)
-        self.artist_label.place(relx=0.5, rely=0.49, anchor=CENTER)
-        self.meta_label.place(relx=0.5, rely=0.58, anchor=CENTER)
-        self.progress_canvas.place(relx=0.5, rely=0.68, anchor=CENTER)
-        self.time_label.place(relx=0.5, rely=0.73, anchor=CENTER)
+        self.progress_y = self.top + 6 * self.line_height
 
     def load_state(self):
         if not self.state_path.exists():
@@ -162,6 +157,10 @@ class NowPlayingOverlay:
         return OverlayState(
             status=str(data.get("status") or "waiting"),
             playback_status=str(data.get("playback_status") or ""),
+            listening=bool(data.get("listening") or False),
+            backing_off=bool(data.get("backing_off") or False),
+            shazam_request_count=int(data.get("shazam_request_count") or 0),
+            shazam_requests_per_min=float(data.get("shazam_requests_per_min") or 0.0),
             title=str(data.get("title") or ""),
             artist=str(data.get("artist") or ""),
             album=str(data.get("album") or ""),
@@ -175,7 +174,7 @@ class NowPlayingOverlay:
         )
 
     def current_progress(self, state):
-        if not state.track_duration_ms or state.progress_start_seconds is None:
+        if state.status != "recognized" or not state.track_duration_ms or state.progress_start_seconds is None:
             return None, None
         recognized_at = parse_iso(state.recognized_at)
         elapsed = 0.0
@@ -190,65 +189,33 @@ class NowPlayingOverlay:
         self.progress_canvas.delete("all")
         width = int(float(self.progress_canvas.cget("width")))
         height = int(float(self.progress_canvas.cget("height")))
-        self.progress_canvas.create_rectangle(0, 0, width, height, fill="#202020", outline="#505050")
         if current is None or not total:
             self.progress_canvas.place_forget()
             self.time_label.place_forget()
             return
+        self.progress_canvas.create_rectangle(0, 0, width, height, fill="#202020", outline="#505050")
         filled = int(width * min(1.0, max(0.0, current / total)))
         self.progress_canvas.create_rectangle(0, 0, filled, height, fill="#33d6c3", outline="")
-        self.progress_canvas.place(relx=0.5, rely=0.68, anchor=CENTER)
+        self.progress_canvas.place(x=self.left, y=self.progress_y)
         self.time_label.configure(text="%s / %s" % (format_time(current), format_time(total)))
-        self.time_label.place(relx=0.5, rely=0.73, anchor=CENTER)
-
-    def hide_progress(self):
-        self.progress_canvas.place_forget()
-        self.time_label.place_forget()
+        self.time_label.place(x=self.left, y=self.progress_y + 38)
 
     def update_labels(self):
         state = self.load_state()
-        if state.status == "recognized" and state.title:
-            self.root.deiconify()
-            self.root.lift()
-            self.root.attributes("-topmost", True)
-            self.title_label.configure(text=state.title)
-            self.artist_label.configure(text=state.artist or "Unknown artist")
-            meta_parts = []
-            if state.album:
-                meta_parts.append(state.album)
-            if state.score:
-                meta_parts.append("%s score %.2f" % (state.provider.title() or "Recognition", state.score))
-            self.meta_label.configure(text="  •  ".join(meta_parts))
-            self.draw_progress(state)
-        elif state.status == "stopped":
-            self.root.deiconify()
-            self.root.lift()
-            self.title_label.configure(text="Stopped")
-            self.artist_label.configure(text="No audio detected")
-            self.meta_label.configure(text=state.message)
-            self.hide_progress()
-        elif self.show_unrecognized:
-            self.root.deiconify()
-            self.root.lift()
-            self.title_label.configure(text="Listening…")
-            if state.status == "silence":
-                self.artist_label.configure(text="No audio detected")
-            elif state.status == "low_score":
-                self.artist_label.configure(text="Possible match below confidence threshold")
-            elif state.status == "error":
-                self.artist_label.configure(text="Recognition error")
-            elif state.status == "no_match":
-                self.artist_label.configure(text="No match yet")
-            else:
-                self.artist_label.configure(text="Waiting for a recognized record")
-            self.meta_label.configure(text=state.message)
-            self.hide_progress()
-        else:
-            self.title_label.configure(text="")
-            self.artist_label.configure(text="")
-            self.meta_label.configure(text="")
-            self.hide_progress()
-            self.root.withdraw()
+        good_track = state.status == "recognized"
+        lines = [
+            "Track: %s" % (state.title if good_track else ""),
+            "Artist: %s" % (state.artist if good_track else ""),
+            "Album: %s" % (state.album if good_track else ""),
+            "Status: %s" % status_text(state),
+            "Shazam Requests: %s reqs, %.1f reqs/m" % (state.shazam_request_count, state.shazam_requests_per_min),
+        ]
+        self.root.deiconify()
+        self.root.lift()
+        self.root.attributes("-topmost", True)
+        for label, text in zip(self.labels, lines):
+            label.configure(text=text)
+        self.draw_progress(state)
         self.root.after(self.poll_ms, self.update_labels)
 
     def run(self):

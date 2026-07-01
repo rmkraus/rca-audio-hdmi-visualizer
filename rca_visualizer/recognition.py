@@ -34,6 +34,10 @@ class RecognitionResult:
         progress_start_seconds=None,
         progress_padding_seconds=0,
         playback_status="",
+        listening=False,
+        backing_off=False,
+        shazam_request_count=0,
+        shazam_requests_per_min=0.0,
         rms=None,
         raw=None,
         message="",
@@ -55,6 +59,10 @@ class RecognitionResult:
         self.progress_start_seconds = progress_start_seconds
         self.progress_padding_seconds = progress_padding_seconds
         self.playback_status = playback_status
+        self.listening = bool(listening)
+        self.backing_off = bool(backing_off)
+        self.shazam_request_count = int(shazam_request_count or 0)
+        self.shazam_requests_per_min = float(shazam_requests_per_min or 0.0)
         self.rms = rms
         self.raw = raw
         self.message = message
@@ -63,6 +71,10 @@ class RecognitionResult:
         return {
             "status": self.status,
             "playback_status": self.playback_status,
+            "listening": self.listening,
+            "backing_off": self.backing_off,
+            "shazam_request_count": self.shazam_request_count,
+            "shazam_requests_per_min": self.shazam_requests_per_min,
             "title": self.title,
             "artist": self.artist,
             "album": self.album,
@@ -213,6 +225,45 @@ def write_state(path, result):
     os.replace(str(tmp), str(path))
 
 
+def attach_metrics(result, request_count=0, requests_per_min=0.0):
+    result.shazam_request_count = int(request_count or 0)
+    result.shazam_requests_per_min = float(requests_per_min or 0.0)
+    return result
+
+
+def request_rate(request_times):
+    now = time.time()
+    while request_times and request_times[0] < now - 60.0:
+        request_times.pop(0)
+    return float(len(request_times))
+
+
+def copy_display_result(base, status, playback_status, listening=False, backing_off=False, message=""):
+    base = base or RecognitionResult(status="waiting")
+    return RecognitionResult(
+        status=status,
+        title=base.title,
+        artist=base.artist,
+        album=base.album,
+        score=base.score,
+        provider=base.provider,
+        recognized_at=base.recognized_at,
+        duration=base.duration,
+        acoustid=base.acoustid,
+        musicbrainz_recording_id=base.musicbrainz_recording_id,
+        track_duration_ms=base.track_duration_ms,
+        match_offset_seconds=base.match_offset_seconds,
+        progress_start_seconds=base.progress_start_seconds,
+        progress_padding_seconds=base.progress_padding_seconds,
+        playback_status=playback_status,
+        listening=listening,
+        backing_off=backing_off,
+        rms=base.rms,
+        raw=base.raw,
+        message=message or base.message,
+    )
+
+
 def identify_with_shazam(path):
     if not Path(SHAZAM_VENV_PYTHON).exists() or not Path(SHAZAM_LOOKUP_SCRIPT).exists():
         return RecognitionResult(
@@ -274,6 +325,8 @@ def identify_once(config):
         result.duration = duration
         result.rms = rms
         result.playback_status = "playing"
+        result.shazam_request_count = 1
+        result.shazam_requests_per_min = 1.0
         if result.status == "recognized":
             result.progress_padding_seconds = padding
             result.progress_start_seconds = progress_start_seconds(result, padding)
@@ -287,13 +340,16 @@ def daemon(config):
     sample_seconds = config.int("RECOGNITION_SAMPLE_SECONDS", 12)
     silence_limit = config.int("RECOGNITION_SILENCE_WINDOWS_TO_STOP", 3)
     no_match_limit = config.int("RECOGNITION_NO_MATCH_LIMIT", 3)
-    no_match_backoff = config.int("RECOGNITION_NO_MATCH_BACKOFF_SECONDS", 60)
+    no_match_backoff = config.int("RECOGNITION_NO_MATCH_BACKOFF_SECONDS", 30)
     progress_resume_percent = config.float("RECOGNITION_PROGRESS_RESUME_PERCENT", 95.0)
     progress_padding = config.float("RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS", 5.0)
 
     silence_count = 0
     no_match_count = 0
     playback_status = "stopped"
+    last_display_result = RecognitionResult(status="waiting", playback_status=playback_status)
+    shazam_request_count = 0
+    shazam_request_times = []
 
     if not enabled:
         print("Recognition disabled. Set RECOGNITION_ENABLED=true to enable.", flush=True)
@@ -303,6 +359,16 @@ def daemon(config):
     while True:
         sleep_for = 0
         try:
+            listening_result = copy_display_result(
+                last_display_result,
+                status="listening",
+                playback_status=playback_status,
+                listening=True,
+                message="recording %s second sample" % sample_seconds,
+            )
+            attach_metrics(listening_result, shazam_request_count, request_rate(shazam_request_times))
+            write_state(state_path, listening_result)
+
             with tempfile.TemporaryDirectory(prefix="rca-recognition-") as tmpdir:
                 sample = Path(tmpdir) / "sample.wav"
                 record_sample(config, sample, sample_seconds)
@@ -332,34 +398,63 @@ def daemon(config):
                             message="quiet sample %s/%s; RMS %.1f below threshold %.1f"
                             % (silence_count, silence_limit, rms, min_rms),
                         )
+                    attach_metrics(result, shazam_request_count, request_rate(shazam_request_times))
                     write_state(state_path, result)
+                    last_display_result = result
                 else:
                     silence_count = 0
                     playback_status = "playing"
+                    shazam_request_count += 1
+                    shazam_request_times.append(time.time())
                     result = identify_with_shazam(sample)
                     result.duration = duration
                     result.rms = rms
                     result.playback_status = playback_status
+                    attach_metrics(result, shazam_request_count, request_rate(shazam_request_times))
                     if result.status == "recognized":
                         no_match_count = 0
                         result.progress_padding_seconds = progress_padding
                         result.progress_start_seconds = progress_start_seconds(result, progress_padding)
                         write_state(state_path, result)
+                        last_display_result = result
                         sleep_for = sleep_until_progress(result, progress_resume_percent)
-                    elif result.status == "no_match":
+                    elif result.status in {"no_match", "error"}:
                         no_match_count += 1
+                        # Bad Shazam responses should not leave stale track data
+                        # on screen.
+                        result.title = ""
+                        result.artist = ""
+                        result.album = ""
+                        result.track_duration_ms = 0
+                        result.progress_start_seconds = None
+                        result.match_offset_seconds = None
                         result.playback_status = playback_status
-                        result.message = result.message or "no Shazam match %s/%s" % (no_match_count, no_match_limit)
-                        write_state(state_path, result)
+                        result.message = result.message or "bad Shazam response %s/%s" % (no_match_count, no_match_limit)
                         if no_match_count >= no_match_limit:
+                            result.status = "backing_off"
+                            result.backing_off = True
+                            result.message = "backing off for %s seconds after %s bad Shazam responses" % (
+                                no_match_backoff,
+                                no_match_limit,
+                            )
                             sleep_for = no_match_backoff
                             no_match_count = 0
-                    else:
                         write_state(state_path, result)
+                        last_display_result = result
+                    else:
+                        result.title = ""
+                        result.artist = ""
+                        result.album = ""
+                        result.track_duration_ms = 0
+                        result.progress_start_seconds = None
+                        result.match_offset_seconds = None
+                        result.backing_off = True
+                        write_state(state_path, result)
+                        last_display_result = result
                         sleep_for = no_match_backoff
 
             print(
-                "%s/%s: %s - %s provider=%s score=%.3f rms=%s %s" % (
+                "%s/%s: %s - %s provider=%s score=%.3f rms=%s reqs=%s rpm=%.1f %s" % (
                     result.playback_status or "unknown",
                     result.status,
                     result.artist,
@@ -367,16 +462,24 @@ def daemon(config):
                     result.provider,
                     result.score,
                     "%.1f" % result.rms if result.rms is not None else "",
+                    result.shazam_request_count,
+                    result.shazam_requests_per_min,
                     result.message,
                 ),
                 flush=True,
             )
         except Exception as exc:
             err = RecognitionResult(status="error", playback_status=playback_status, recognized_at=now_iso(), message=str(exc))
+            attach_metrics(err, shazam_request_count, request_rate(shazam_request_times))
             write_state(state_path, err)
+            last_display_result = err
             print("recognition error: %s" % exc, file=sys.stderr, flush=True)
             sleep_for = no_match_backoff
         if sleep_for > 0:
+            if last_display_result.status in {"backing_off", "error"}:
+                last_display_result.backing_off = True
+                attach_metrics(last_display_result, shazam_request_count, request_rate(shazam_request_times))
+                write_state(state_path, last_display_result)
             time.sleep(max(5, sleep_for))
 
 
@@ -395,7 +498,7 @@ def main(argv=None):
         state_path = Path(config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json"))
         write_state(state_path, result)
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-        return 0 if result.status in {"recognized", "no_match", "silence", "stopped"} else 1
+        return 0 if result.status in {"recognized", "no_match", "silence", "stopped", "backing_off"} else 1
 
     daemon(config)
     return 0
