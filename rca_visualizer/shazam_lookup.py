@@ -20,8 +20,20 @@ def first_match_offset(data):
 async def recognize(path):
     shazam = Shazam()
     if hasattr(shazam, "recognize"):
-        return await shazam.recognize(path)
-    return await shazam.recognize_song(path)
+        data = await shazam.recognize(path)
+    else:
+        data = await shazam.recognize_song(path)
+
+    track = data.get("track") if isinstance(data, dict) else None
+    track_key = str((track or {}).get("key") or "")
+    if track_key:
+        try:
+            about = await shazam.track_about(int(track_key))
+            if isinstance(about, dict):
+                data["track_about"] = about
+        except Exception:
+            pass
+    return data
 
 
 def lookup_itunes_duration(track_adam_id):
@@ -41,8 +53,30 @@ def lookup_itunes_duration(track_adam_id):
     return 0
 
 
+def metadata_album(track):
+    sections = track.get("sections") or []
+    metadata = []
+    for section in sections:
+        metadata.extend(section.get("metadata") or [])
+    for item in metadata:
+        title = str(item.get("title") or "").lower()
+        if title in {"album", "release"}:
+            return str(item.get("text") or "")
+    return ""
+
+
+def first_nonempty(*values):
+    for value in values:
+        if value:
+            return str(value)
+    return ""
+
+
 def track_to_result(data):
     track = data.get("track") if isinstance(data, dict) else None
+    about = data.get("track_about") if isinstance(data, dict) else None
+    if not isinstance(about, dict):
+        about = {}
     if not track:
         return {
             "status": "no_match",
@@ -55,25 +89,15 @@ def track_to_result(data):
             "message": "",
         }
 
-    sections = track.get("sections") or []
-    metadata = []
-    for section in sections:
-        metadata.extend(section.get("metadata") or [])
-    album = ""
-    for item in metadata:
-        title = str(item.get("title") or "").lower()
-        if title in {"album", "release"}:
-            album = str(item.get("text") or "")
-            break
-
-    track_adam_id = str(track.get("trackadamid") or "")
+    album = first_nonempty(metadata_album(track), metadata_album(about))
+    track_adam_id = first_nonempty(track.get("trackadamid"), about.get("trackadamid"))
     track_duration_ms = lookup_itunes_duration(track_adam_id)
     offset = first_match_offset(data)
 
     return {
         "status": "recognized",
-        "title": str(track.get("title") or ""),
-        "artist": str(track.get("subtitle") or ""),
+        "title": first_nonempty(track.get("title"), about.get("title")),
+        "artist": first_nonempty(track.get("subtitle"), about.get("subtitle")),
         "album": album,
         "score": 1.0,
         "provider": "shazam",
@@ -83,12 +107,12 @@ def track_to_result(data):
         "match_offset_seconds": offset,
         "raw": {
             "key": str(track.get("key") or ""),
-            "url": str(track.get("url") or ""),
+            "url": first_nonempty(track.get("url"), about.get("url")),
             "trackadamid": track_adam_id,
-            "isrc": str(track.get("isrc") or ""),
+            "isrc": first_nonempty(track.get("isrc"), about.get("isrc")),
             "matches": data.get("matches") or [],
         },
-        "message": str(track.get("url") or ""),
+        "message": first_nonempty(track.get("url"), about.get("url")),
     }
 
 
