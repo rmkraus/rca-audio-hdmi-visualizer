@@ -1,6 +1,6 @@
 [Unit]
-Description=Fullscreen now-playing overlay
-After=display-manager.service rca-cavasik-kiosk.service rca-now-playing.service
+Description=Fullscreen now-playing display
+After=display-manager.service rca-now-playing.service
 Wants=rca-now-playing.service
 
 [Service]

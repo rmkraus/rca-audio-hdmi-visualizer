@@ -319,7 +319,8 @@ APT_UPGRADE_TIMER
 systemctl daemon-reload
 systemctl enable lightdm.service || true
 systemctl enable apt-daily.timer apt-daily-upgrade.timer
-systemctl enable rca-cavasik-kiosk.service rca-audio-loopback.service rca-now-playing.service rca-now-playing-overlay.service
+systemctl enable rca-audio-loopback.service rca-now-playing.service rca-now-playing-overlay.service
+systemctl disable --now rca-cavasik-kiosk.service >/dev/null 2>&1 || true
 if [[ "$PLATFORM" == jetson-nano ]]; then
   systemctl enable jetson-performance.service
 fi
@@ -337,6 +338,6 @@ Recommended next steps:
   2. Enable recognition with RECOGNITION_ENABLED=true in $ENV_FILE
   3. Reboot: sudo reboot
   4. If audio routing is wrong, edit SOURCE_MATCH/SINK_MATCH in $ENV_FILE
-  5. Check services with: systemctl status rca-cavasik-kiosk rca-audio-loopback rca-now-playing rca-now-playing-overlay
-  6. Check Cavasik availability with: check-cavasik --run-test
+  5. Check services with: systemctl status rca-audio-loopback rca-now-playing rca-now-playing-overlay
+  6. Optional legacy Cavasik check: check-cavasik --run-test
 EOF

@@ -1,21 +1,21 @@
-# RCA Audio to HDMI Visualizer Appliance
+# RCA Audio to HDMI Now-Playing Appliance
 
-A small Linux appliance for converting analog RCA audio into an HDMI visualizer display.
+A small Linux appliance for converting analog RCA audio into HDMI audio plus a
+fullscreen now-playing display.
 
 The intended hardware path is:
 
 - RCA stereo source
 - USB audio interface for capture
 - Raspberry Pi or Jetson Nano HDMI output to a TV/projector/capture chain
-- Full-screen [Cavasik](https://github.com/TheWisker/Cavasik) audio visualizer
 - Live audio monitor from USB capture input to HDMI audio output
 - Shazam-style now-playing recognition for the vinyl feed
-- Fullscreen now-playing overlay displayed above the visualization
+- Fullscreen now-playing display with track metadata and progress
 
-This repository contains an installer and systemd units to make the box boot directly into the visualizer experience:
+This repository contains an installer and systemd units to make the box boot directly into the appliance experience:
 
 - automatic graphical login through LightDM
-- Cavasik launched full screen/kiosk style
+- fullscreen now-playing display launched on boot
 - PipeWire/PulseAudio audio loopback from USB capture to HDMI output
 - unattended security upgrades enabled
 - unattended upgrade window set to 4:00 AM
@@ -27,10 +27,11 @@ This repository contains an installer and systemd units to make the box boot dir
 
 Recommended options:
 
-- **Jetson Nano Developer Kit** running official JetPack 4.6.x / L4T Ubuntu 18.04. This should have much more headroom than a Raspberry Pi 3 for 1080p visualization, but the biggest risk is whether the current Cavasik Flatpak will install and run on the older Ubuntu/Flatpak stack.
+- **Jetson Nano Developer Kit** running official JetPack 4.6.x / L4T Ubuntu 18.04.
 - **Raspberry Pi OS 64-bit with desktop** on a Raspberry Pi 4 or Pi 5.
 
-Raspberry Pi 3 can output 1080p, but full-screen Cavasik at 1080p may be marginal. Use 720p or a minimal desktop if it stutters.
+Raspberry Pi 3 can output 1080p and should be much happier with the lightweight
+now-playing display than it was with a full audio visualizer.
 
 ## Quick start
 
@@ -60,11 +61,14 @@ Tailscale is installed by the installer, but it is not authenticated automatical
 sudo tailscale up
 ```
 
-After reboot, the system should log in as the configured desktop user, start the graphical session, launch Cavasik full screen, and start audio loopback from the USB audio interface to HDMI.
+After reboot, the system should log in as the configured desktop user, start the
+graphical session, show the fullscreen now-playing display, and start audio
+loopback from the USB audio interface to HDMI.
 
 ## Jetson Nano notes
 
-The Jetson Nano is likely the best old-board candidate for 1080p Cavasik because it has 4GB RAM and an NVIDIA Maxwell GPU. Use a proper **5V/4A barrel-jack power supply**, cooling, and 10W mode.
+The Jetson Nano has plenty of headroom for the current now-playing display. Use a
+proper **5V/4A barrel-jack power supply**, cooling, and 10W mode.
 
 The installer adds `jetson-performance.service` on Jetson Nano. It runs:
 
@@ -73,28 +77,8 @@ nvpmodel -m 0
 jetson_clocks
 ```
 
-### Cavasik risk check
-
-Yes — Cavasik availability is the main risk on Jetson Nano. The official Nano software stack is old, and current Flathub runtimes may or may not work cleanly with its Flatpak version.
-
-Before committing the box build, run:
-
-```bash
-./scripts/check-cavasik.sh
-```
-
-To install and test launch from a graphical session:
-
-```bash
-./scripts/check-cavasik.sh --install --run-test
-```
-
-If Cavasik is not available from Flathub on the Nano, options are:
-
-- update Flatpak from a newer repo/backport, then rerun `scripts/check-cavasik.sh --install`
-- install the rest of this appliance with `sudo ./scripts/install.sh --platform jetson-nano --assume-cavasik`, then install Cavasik manually later
-- install with `--skip-cavasik` and replace the visualizer command later
-- use a different visualizer, such as terminal `cava` in a fullscreen terminal, as a fallback
+The original Cavasik visualizer is now legacy/optional. The installed boot path
+does not start a visualizer; it starts the fullscreen now-playing display only.
 
 ## Now playing recognition
 
@@ -117,7 +101,7 @@ The default conservative sample length is 12 seconds. See `docs/now-playing.md` 
 ## Hardware notes
 
 - Use a USB audio interface with stereo line input. Many cheap dongles expose mic input only; those can clip or sum the signal incorrectly.
-- RCA output is line-level. If your interface has gain controls, start low and raise until Cavasik responds without clipping.
+- RCA output is line-level. If your interface has gain controls, start low and raise until recognition sees healthy RMS without clipping.
 - HDMI audio output must be selected as the default output, or explicitly configured in `/etc/rca-hdmi-visualizer.env`.
 - If the RCA source hums, use a USB interface with isolation or add an RCA ground-loop isolator.
 
@@ -132,12 +116,8 @@ Useful settings:
 - `SOURCE_MATCH`: case-insensitive text used to identify the USB capture source.
 - `SINK_MATCH`: case-insensitive text used to identify the HDMI output sink.
 - `LOOPBACK_LATENCY_MSEC`: requested PipeWire/PulseAudio loopback latency.
-- `CAVASIK_APP_ID`: Flatpak app ID, normally `io.github.TheWisker.Cavasik`.
-- `VISUALIZER_COMMAND`: optional command override if you need to launch a non-Flatpak build of Cavasik or a fallback visualizer.
 - `RECOGNITION_ENABLED`: enables/disables now-playing recognition.
 - `RECOGNITION_SAMPLE_SECONDS`: sample length sent to the recognizer; 12 seconds is the default, 15-20 can improve difficult passages.
-- `RECOGNITION_INTERVAL_SECONDS`: delay between attempts after no match.
-- `RECOGNITION_COOLDOWN_SECONDS`: delay after recognizing the same track again.
 - `RECOGNITION_MIN_RMS`: silence gate; samples quieter than this skip lookup.
 - `OVERLAY_ALPHA`: fullscreen overlay opacity.
 
@@ -159,21 +139,18 @@ sudo systemctl restart rca-audio-loopback.service
 
 System services installed by this repo:
 
-- `rca-cavasik-kiosk.service`: waits for the desktop session and launches Cavasik under the configured user.
 - `rca-audio-loopback.service`: creates an audio loopback from the selected USB capture source to HDMI output.
 - `rca-now-playing.service`: records short audio samples and identifies them with the Shazam-style recognizer.
-- `rca-now-playing-overlay.service`: shows recognized now-playing metadata in a fullscreen always-on-top overlay.
+- `rca-now-playing-overlay.service`: shows now-playing metadata in a fullscreen always-on-top display.
 - `jetson-performance.service`: Jetson Nano only; enables 10W mode and max clocks.
 
 Useful commands:
 
 ```bash
-systemctl status rca-cavasik-kiosk.service
 systemctl status rca-audio-loopback.service
 systemctl status rca-now-playing.service
 systemctl status rca-now-playing-overlay.service
 systemctl status jetson-performance.service
-journalctl -u rca-cavasik-kiosk.service -f
 journalctl -u rca-audio-loopback.service -f
 journalctl -u rca-now-playing.service -f
 ```
@@ -196,7 +173,5 @@ systemctl list-timers 'apt-daily*'
 
 ## Caveats
 
-- The kiosk launcher uses `wmctrl` and `xdotool` to make the Cavasik window full screen. If Cavasik changes its window title/class, adjust `WINDOW_MATCH` in `/etc/rca-hdmi-visualizer.env`.
-- This setup expects X11 because the fullscreen helper uses X11 window-management tools.
-- Flatpak apps can sometimes need first-run configuration. Launch Cavasik manually once if you want to customize colors/modes before making the box appliance-like.
+- This setup currently expects X11 because the fullscreen display uses Tk.
 - Recognition uses an unofficial Shazam-style recognizer. Keep polling conservative and expect the upstream endpoint/library to change without notice.
