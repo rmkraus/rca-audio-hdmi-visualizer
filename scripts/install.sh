@@ -163,6 +163,7 @@ install -m 0755 "$REPO_DIR/scripts/rca-simple-visualizer" /usr/local/bin/rca-sim
 mkdir -p /opt/rca-hdmi-visualizer
 rm -rf /opt/rca-hdmi-visualizer/rca_visualizer
 cp -a "$REPO_DIR/rca_visualizer" /opt/rca-hdmi-visualizer/
+find /opt/rca-hdmi-visualizer/rca_visualizer -type d -name __pycache__ -prune -exec rm -rf {} +
 
 if [[ "$PLATFORM" == jetson-nano ]] && [[ -x /usr/bin/python3.8 ]]; then
   if [[ ! -x /opt/rca-hdmi-visualizer/shazam-venv/bin/python ]]; then

@@ -8,13 +8,14 @@ from socketserver import ThreadingMixIn
 from urllib.parse import unquote, urlparse
 
 from .config import RuntimeConfig
+from .defaults import DEFAULT_MIN_RMS, DEFAULT_STATE_PATH
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
 
 def public_runtime_config(config):
     return {
-        "recognition_min_rms": config.float("RECOGNITION_MIN_RMS", 150.0),
+        "recognition_min_rms": config.float("RECOGNITION_MIN_RMS", DEFAULT_MIN_RMS),
     }
 
 
@@ -23,8 +24,8 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 class NowPlayingHandler(SimpleHTTPRequestHandler):
-    state_path = Path("/var/lib/rca-hdmi-visualizer/now-playing.json")
-    public_config = {"recognition_min_rms": 150.0}
+    state_path = Path(DEFAULT_STATE_PATH)
+    public_config = {"recognition_min_rms": DEFAULT_MIN_RMS}
 
     def translate_path(self, path):
         """Serve files from WEB_DIR without depending on the process cwd.
@@ -89,7 +90,7 @@ def main(argv=None):
 
     mimetypes.add_type("text/javascript", ".js")
     config = RuntimeConfig.load()
-    state = args.state or config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json")
+    state = args.state or config.str("NOW_PLAYING_STATE", DEFAULT_STATE_PATH)
     NowPlayingHandler.state_path = Path(state)
     NowPlayingHandler.public_config = public_runtime_config(config)
 

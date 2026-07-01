@@ -11,6 +11,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import RuntimeConfig
+from .defaults import (
+    DEFAULT_CHANNELS,
+    DEFAULT_MAX_RECHECK_WAIT_SECONDS,
+    DEFAULT_MIN_RMS,
+    DEFAULT_MISSING_DURATION_RECHECK_SECONDS,
+    DEFAULT_NO_MATCH_BACKOFF_SECONDS,
+    DEFAULT_NO_MATCH_LIMIT,
+    DEFAULT_PROGRESS_OFFSET_PADDING_SECONDS,
+    DEFAULT_PROGRESS_RESUME_PERCENT,
+    DEFAULT_RATELIMIT_BACKOFF_SECONDS,
+    DEFAULT_RATELIMIT_REQUESTS_PER_MIN,
+    DEFAULT_SAMPLE_RATE,
+    DEFAULT_SAMPLE_SECONDS,
+    DEFAULT_STATE_PATH,
+)
 
 SHAZAM_LOOKUP_SCRIPT = "/opt/rca-hdmi-visualizer/rca_visualizer/shazam_lookup.py"
 SHAZAM_VENV_PYTHON = "/opt/rca-hdmi-visualizer/shazam-venv/bin/python"
@@ -162,8 +177,8 @@ def record_sample(config, output_path, seconds):
     source = config.str("RECOGNITION_SOURCE", "") or get_audio_device(
         "source", config.str("SOURCE_MATCH", "usb"), user
     )
-    rate = config.int("RECOGNITION_SAMPLE_RATE", 44100)
-    channels = config.int("RECOGNITION_CHANNELS", 2)
+    rate = config.int("RECOGNITION_SAMPLE_RATE", DEFAULT_SAMPLE_RATE)
+    channels = config.int("RECOGNITION_CHANNELS", DEFAULT_CHANNELS)
 
     parec_cmd = [
         "parec",
@@ -228,7 +243,7 @@ def write_state(path, result):
     os.replace(str(tmp), str(path))
 
 
-def attach_metrics(result, request_count=0, requests_per_min=0.0):
+def set_metrics(result, request_count=0, requests_per_min=0.0):
     result.shazam_request_count = int(request_count or 0)
     result.shazam_requests_per_min = float(requests_per_min or 0.0)
     return result
@@ -239,6 +254,16 @@ def request_rate(request_times, window_seconds=60):
     while request_times and request_times[0] < now - float(window_seconds):
         request_times.pop(0)
     return float(len(request_times))
+
+
+def clear_track_fields(result):
+    result.title = ""
+    result.artist = ""
+    result.album = ""
+    result.track_duration_ms = 0
+    result.progress_start_seconds = None
+    result.match_offset_seconds = None
+    return result
 
 
 def copy_display_result(base, status, playback_status, listening=False, backing_off=False, ratelimit=False, message=""):
@@ -310,9 +335,9 @@ def sleep_until_progress(result, target_percent, missing_duration_sleep=60, max_
 
 
 def identify_once(config):
-    seconds = config.int("RECOGNITION_SAMPLE_SECONDS", 12)
-    min_rms = config.float("RECOGNITION_MIN_RMS", 150.0)
-    padding = config.float("RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS", 5.0)
+    seconds = config.int("RECOGNITION_SAMPLE_SECONDS", DEFAULT_SAMPLE_SECONDS)
+    min_rms = config.float("RECOGNITION_MIN_RMS", DEFAULT_MIN_RMS)
+    padding = config.float("RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS", DEFAULT_PROGRESS_OFFSET_PADDING_SECONDS)
 
     with tempfile.TemporaryDirectory(prefix="rca-recognition-") as tmpdir:
         sample = Path(tmpdir) / "sample.wav"
@@ -341,21 +366,19 @@ def identify_once(config):
 
 
 def daemon(config):
-    state_path = Path(config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json"))
+    state_path = Path(config.str("NOW_PLAYING_STATE", DEFAULT_STATE_PATH))
     enabled = config.bool("RECOGNITION_ENABLED", False)
-    min_rms = config.float("RECOGNITION_MIN_RMS", 150.0)
-    sample_seconds = config.int("RECOGNITION_SAMPLE_SECONDS", 12)
-    silence_limit = config.int("RECOGNITION_SILENCE_WINDOWS_TO_STOP", 1)
-    no_match_limit = config.int("RECOGNITION_NO_MATCH_LIMIT", 3)
-    no_match_backoff = config.int("RECOGNITION_NO_MATCH_BACKOFF_SECONDS", 30)
-    ratelimit_threshold = config.float("RECOGNITION_RATELIMIT_REQUESTS_PER_MIN", 5.0)
-    ratelimit_backoff = config.int("RECOGNITION_RATELIMIT_BACKOFF_SECONDS", 600)
-    progress_resume_percent = config.float("RECOGNITION_PROGRESS_RESUME_PERCENT", 100.0)
-    max_recheck_wait = config.int("RECOGNITION_MAX_RECHECK_WAIT_SECONDS", 150)
-    missing_duration_recheck = config.int("RECOGNITION_MISSING_DURATION_RECHECK_SECONDS", 60)
-    progress_padding = config.float("RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS", 5.0)
+    min_rms = config.float("RECOGNITION_MIN_RMS", DEFAULT_MIN_RMS)
+    sample_seconds = config.int("RECOGNITION_SAMPLE_SECONDS", DEFAULT_SAMPLE_SECONDS)
+    no_match_limit = config.int("RECOGNITION_NO_MATCH_LIMIT", DEFAULT_NO_MATCH_LIMIT)
+    no_match_backoff = config.int("RECOGNITION_NO_MATCH_BACKOFF_SECONDS", DEFAULT_NO_MATCH_BACKOFF_SECONDS)
+    ratelimit_threshold = config.float("RECOGNITION_RATELIMIT_REQUESTS_PER_MIN", DEFAULT_RATELIMIT_REQUESTS_PER_MIN)
+    ratelimit_backoff = config.int("RECOGNITION_RATELIMIT_BACKOFF_SECONDS", DEFAULT_RATELIMIT_BACKOFF_SECONDS)
+    progress_resume_percent = config.float("RECOGNITION_PROGRESS_RESUME_PERCENT", DEFAULT_PROGRESS_RESUME_PERCENT)
+    max_recheck_wait = config.int("RECOGNITION_MAX_RECHECK_WAIT_SECONDS", DEFAULT_MAX_RECHECK_WAIT_SECONDS)
+    missing_duration_recheck = config.int("RECOGNITION_MISSING_DURATION_RECHECK_SECONDS", DEFAULT_MISSING_DURATION_RECHECK_SECONDS)
+    progress_padding = config.float("RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS", DEFAULT_PROGRESS_OFFSET_PADDING_SECONDS)
 
-    silence_count = 0
     no_match_count = 0
     playback_status = "stopped"
     last_display_result = RecognitionResult(status="waiting", playback_status=playback_status)
@@ -382,7 +405,7 @@ def daemon(config):
                 listening=True,
                 message="recording %s second sample" % sample_seconds,
             )
-            attach_metrics(listening_result, shazam_request_count, request_rate(shazam_request_times))
+            set_metrics(listening_result, shazam_request_count, request_rate(shazam_request_times))
             write_state(state_path, listening_result)
 
             with tempfile.TemporaryDirectory(prefix="rca-recognition-") as tmpdir:
@@ -391,7 +414,6 @@ def daemon(config):
                 rms, duration = wav_stats(sample)
 
                 if rms < min_rms:
-                    silence_count += 1
                     no_match_count = 0
                     playback_status = "stopped"
                     result = RecognitionResult(
@@ -403,11 +425,10 @@ def daemon(config):
                         message="stopped after quiet sample; RMS %.1f below threshold %.1f"
                         % (rms, min_rms),
                     )
-                    attach_metrics(result, shazam_request_count, request_rate(shazam_request_times))
+                    set_metrics(result, shazam_request_count, request_rate(shazam_request_times))
                     write_state(state_path, result)
                     last_display_result = result
                 else:
-                    silence_count = 0
                     playback_status = "playing"
                     shazam_request_count += 1
                     shazam_request_times.append(time.time())
@@ -415,17 +436,12 @@ def daemon(config):
                     result.duration = duration
                     result.rms = rms
                     result.playback_status = playback_status
-                    attach_metrics(result, shazam_request_count, request_rate(shazam_request_times))
+                    set_metrics(result, shazam_request_count, request_rate(shazam_request_times))
                     if result.shazam_requests_per_min > ratelimit_threshold:
                         result.status = "ratelimit"
                         result.ratelimit = True
                         result.backing_off = True
-                        result.title = ""
-                        result.artist = ""
-                        result.album = ""
-                        result.track_duration_ms = 0
-                        result.progress_start_seconds = None
-                        result.match_offset_seconds = None
+                        clear_track_fields(result)
                         result.message = "RATELIMIT: %.1f Shazam requests/min > %.1f; backing off for %s seconds" % (
                             result.shazam_requests_per_min,
                             ratelimit_threshold,
@@ -474,18 +490,13 @@ def daemon(config):
                                 )
                                 sleep_for = no_match_backoff
                                 no_match_count = 0
-                            attach_metrics(kept, shazam_request_count, request_rate(shazam_request_times))
+                            set_metrics(kept, shazam_request_count, request_rate(shazam_request_times))
                             write_state(state_path, kept)
                             last_display_result = kept
                         else:
                             # Bad Shazam responses should not leave stale track data
                             # on screen when there is no previous recognized track to keep.
-                            result.title = ""
-                            result.artist = ""
-                            result.album = ""
-                            result.track_duration_ms = 0
-                            result.progress_start_seconds = None
-                            result.match_offset_seconds = None
+                            clear_track_fields(result)
                             result.playback_status = playback_status
                             result.message = result.message or "bad Shazam response %s/%s" % (no_match_count, no_match_limit)
                             if no_match_count >= no_match_limit:
@@ -500,12 +511,7 @@ def daemon(config):
                             write_state(state_path, result)
                             last_display_result = result
                     else:
-                        result.title = ""
-                        result.artist = ""
-                        result.album = ""
-                        result.track_duration_ms = 0
-                        result.progress_start_seconds = None
-                        result.match_offset_seconds = None
+                        clear_track_fields(result)
                         result.backing_off = True
                         write_state(state_path, result)
                         last_display_result = result
@@ -528,7 +534,7 @@ def daemon(config):
             )
         except Exception as exc:
             err = RecognitionResult(status="error", playback_status=playback_status, recognized_at=now_iso(), message=str(exc))
-            attach_metrics(err, shazam_request_count, request_rate(shazam_request_times))
+            set_metrics(err, shazam_request_count, request_rate(shazam_request_times))
             write_state(state_path, err)
             last_display_result = err
             print("recognition error: %s" % exc, file=sys.stderr, flush=True)
@@ -538,7 +544,7 @@ def daemon(config):
                 last_display_result.backing_off = True
                 if last_display_result.status == "ratelimit":
                     last_display_result.ratelimit = True
-                attach_metrics(last_display_result, shazam_request_count, request_rate(shazam_request_times))
+                set_metrics(last_display_result, shazam_request_count, request_rate(shazam_request_times))
                 write_state(state_path, last_display_result)
             time.sleep(max(5, sleep_for))
 
@@ -555,7 +561,7 @@ def main(argv=None):
 
     if args.command == "identify-once":
         result = identify_once(config)
-        state_path = Path(config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json"))
+        state_path = Path(config.str("NOW_PLAYING_STATE", DEFAULT_STATE_PATH))
         write_state(state_path, result)
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
         return 0 if result.status in {"recognized", "no_match", "silence", "stopped", "backing_off", "ratelimit"} else 1

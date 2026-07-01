@@ -46,8 +46,7 @@ Default settings:
 
 ```env
 RECOGNITION_SAMPLE_SECONDS=12
-RECOGNITION_MIN_RMS=150
-RECOGNITION_SILENCE_WINDOWS_TO_STOP=1
+RECOGNITION_MIN_RMS=75
 RECOGNITION_NO_MATCH_LIMIT=3
 RECOGNITION_NO_MATCH_BACKOFF_SECONDS=30
 RECOGNITION_RATELIMIT_REQUESTS_PER_MIN=5
@@ -62,8 +61,8 @@ Meaning:
 
 - record a 12-second sample
 - measure RMS locally before any network lookup
-- if the sample is below `RECOGNITION_MIN_RMS`, skip Shazam
-- after 3 quiet samples, write `status=stopped` so the overlay shows `Stopped`
+- if the sample is below `RECOGNITION_MIN_RMS`, skip Shazam and write
+  `status=stopped`
 - one good audio window switches `playback_status` back to `playing`
 - while playing, send above-threshold samples to Shazam
 - on a match, look up the iTunes track length, show the estimated progress bar,
@@ -122,7 +121,7 @@ Useful status values:
 - `recognized`: song/artist found and overlay should show it.
 - `no_match`: audio was present, but the recognizer did not find a match.
 - `silence`: sample RMS was below `RECOGNITION_MIN_RMS`.
-- `stopped`: enough consecutive quiet samples occurred to consider playback stopped.
+- `stopped`: sample RMS was below `RECOGNITION_MIN_RMS`.
 - `error`: recognizer setup/network/runtime error; check `message` and service logs.
 
 ## Logs
