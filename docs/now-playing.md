@@ -50,6 +50,8 @@ RECOGNITION_MIN_RMS=150
 RECOGNITION_SILENCE_WINDOWS_TO_STOP=3
 RECOGNITION_NO_MATCH_LIMIT=3
 RECOGNITION_NO_MATCH_BACKOFF_SECONDS=30
+RECOGNITION_RATELIMIT_REQUESTS_PER_MIN=5
+RECOGNITION_RATELIMIT_BACKOFF_SECONDS=600
 RECOGNITION_PROGRESS_RESUME_PERCENT=100
 RECOGNITION_MAX_RECHECK_WAIT_SECONDS=150
 RECOGNITION_MISSING_DURATION_RECHECK_SECONDS=60
@@ -72,6 +74,8 @@ Meaning:
   seconds
 - on no match, check the next sample immediately
 - after 3 consecutive no-match samples, pause for 30 seconds
+- if Shazam requests exceed 5 per minute, set `status=ratelimit` and back off
+  for 10 minutes
 
 Shazam's match offset is the position where the captured snippet matched the
 track. The overlay estimates current position as:

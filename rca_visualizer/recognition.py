@@ -36,6 +36,7 @@ class RecognitionResult:
         playback_status="",
         listening=False,
         backing_off=False,
+        ratelimit=False,
         shazam_request_count=0,
         shazam_requests_per_min=0.0,
         rms=None,
@@ -61,6 +62,7 @@ class RecognitionResult:
         self.playback_status = playback_status
         self.listening = bool(listening)
         self.backing_off = bool(backing_off)
+        self.ratelimit = bool(ratelimit)
         self.shazam_request_count = int(shazam_request_count or 0)
         self.shazam_requests_per_min = float(shazam_requests_per_min or 0.0)
         self.rms = rms
@@ -73,6 +75,7 @@ class RecognitionResult:
             "playback_status": self.playback_status,
             "listening": self.listening,
             "backing_off": self.backing_off,
+            "ratelimit": self.ratelimit,
             "shazam_request_count": self.shazam_request_count,
             "shazam_requests_per_min": self.shazam_requests_per_min,
             "title": self.title,
@@ -231,14 +234,14 @@ def attach_metrics(result, request_count=0, requests_per_min=0.0):
     return result
 
 
-def request_rate(request_times):
+def request_rate(request_times, window_seconds=60):
     now = time.time()
-    while request_times and request_times[0] < now - 60.0:
+    while request_times and request_times[0] < now - float(window_seconds):
         request_times.pop(0)
     return float(len(request_times))
 
 
-def copy_display_result(base, status, playback_status, listening=False, backing_off=False, message=""):
+def copy_display_result(base, status, playback_status, listening=False, backing_off=False, ratelimit=False, message=""):
     base = base or RecognitionResult(status="waiting")
     return RecognitionResult(
         status=status,
@@ -258,6 +261,7 @@ def copy_display_result(base, status, playback_status, listening=False, backing_
         playback_status=playback_status,
         listening=listening,
         backing_off=backing_off,
+        ratelimit=ratelimit,
         rms=base.rms,
         raw=base.raw,
         message=message or base.message,
@@ -344,6 +348,8 @@ def daemon(config):
     silence_limit = config.int("RECOGNITION_SILENCE_WINDOWS_TO_STOP", 3)
     no_match_limit = config.int("RECOGNITION_NO_MATCH_LIMIT", 3)
     no_match_backoff = config.int("RECOGNITION_NO_MATCH_BACKOFF_SECONDS", 30)
+    ratelimit_threshold = config.float("RECOGNITION_RATELIMIT_REQUESTS_PER_MIN", 5.0)
+    ratelimit_backoff = config.int("RECOGNITION_RATELIMIT_BACKOFF_SECONDS", 600)
     progress_resume_percent = config.float("RECOGNITION_PROGRESS_RESUME_PERCENT", 100.0)
     max_recheck_wait = config.int("RECOGNITION_MAX_RECHECK_WAIT_SECONDS", 150)
     missing_duration_recheck = config.int("RECOGNITION_MISSING_DURATION_RECHECK_SECONDS", 60)
@@ -416,7 +422,26 @@ def daemon(config):
                     result.rms = rms
                     result.playback_status = playback_status
                     attach_metrics(result, shazam_request_count, request_rate(shazam_request_times))
-                    if result.status == "recognized":
+                    if result.shazam_requests_per_min > ratelimit_threshold:
+                        result.status = "ratelimit"
+                        result.ratelimit = True
+                        result.backing_off = True
+                        result.title = ""
+                        result.artist = ""
+                        result.album = ""
+                        result.track_duration_ms = 0
+                        result.progress_start_seconds = None
+                        result.match_offset_seconds = None
+                        result.message = "RATELIMIT: %.1f Shazam requests/min > %.1f; backing off for %s seconds" % (
+                            result.shazam_requests_per_min,
+                            ratelimit_threshold,
+                            ratelimit_backoff,
+                        )
+                        write_state(state_path, result)
+                        last_display_result = result
+                        sleep_for = ratelimit_backoff
+                        no_match_count = 0
+                    elif result.status == "recognized":
                         no_match_count = 0
                         result.progress_padding_seconds = progress_padding
                         result.progress_start_seconds = progress_start_seconds(result, progress_padding)
@@ -486,8 +511,10 @@ def daemon(config):
             print("recognition error: %s" % exc, file=sys.stderr, flush=True)
             sleep_for = no_match_backoff
         if sleep_for > 0:
-            if last_display_result.status in {"backing_off", "error"}:
+            if last_display_result.status in {"backing_off", "ratelimit", "error"}:
                 last_display_result.backing_off = True
+                if last_display_result.status == "ratelimit":
+                    last_display_result.ratelimit = True
                 attach_metrics(last_display_result, shazam_request_count, request_rate(shazam_request_times))
                 write_state(state_path, last_display_result)
             time.sleep(max(5, sleep_for))
@@ -508,7 +535,7 @@ def main(argv=None):
         state_path = Path(config.str("NOW_PLAYING_STATE", "/var/lib/rca-hdmi-visualizer/now-playing.json"))
         write_state(state_path, result)
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
-        return 0 if result.status in {"recognized", "no_match", "silence", "stopped", "backing_off"} else 1
+        return 0 if result.status in {"recognized", "no_match", "silence", "stopped", "backing_off", "ratelimit"} else 1
 
     daemon(config)
     return 0

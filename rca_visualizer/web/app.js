@@ -7,10 +7,10 @@ const CHARS = Array.from(" ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0
 ]);
 
 const rows = {
-  track: { el: document.getElementById("line-track"), tiles: [], text: "" },
-  artist: { el: document.getElementById("line-artist"), tiles: [], text: "" },
-  record: { el: document.getElementById("line-record"), tiles: [], text: "" },
-  progress: { el: document.getElementById("line-progress"), tiles: [], text: "" },
+  track: { el: document.getElementById("line-track"), tiles: [], tokens: [] },
+  artist: { el: document.getElementById("line-artist"), tiles: [], tokens: [] },
+  record: { el: document.getElementById("line-record"), tiles: [], tokens: [] },
+  progress: { el: document.getElementById("line-progress"), tiles: [], tokens: [] },
 };
 
 function tokenize(text) {
@@ -57,23 +57,39 @@ function randomChar() {
 }
 
 function animateTileTo(tile, targetChar) {
+  tile.dataset.target = targetChar;
   const current = tile.dataset.char || " ";
-  if (current === targetChar || tile.dataset.busy === "1") return;
+  if (current === targetChar) return;
+  if (tile.dataset.busy === "1") return;
   tile.dataset.busy = "1";
 
-  const steps = Math.min(8, 2 + Math.floor(Math.random() * 5));
-  let step = 0;
-  function tick() {
-    step += 1;
-    setTileChar(tile, step >= steps ? targetChar : randomChar());
-    pulseTile(tile);
-    if (step < steps) {
-      setTimeout(tick, STEP_MS);
-    } else {
+  function runCycle() {
+    const finalTarget = tile.dataset.target || " ";
+    const currentChar = tile.dataset.char || " ";
+    if (currentChar === finalTarget) {
       tile.dataset.busy = "0";
+      return;
     }
+
+    const steps = Math.min(8, 2 + Math.floor(Math.random() * 5));
+    let step = 0;
+    function tick() {
+      step += 1;
+      const latestTarget = tile.dataset.target || " ";
+      setTileChar(tile, step >= steps ? latestTarget : randomChar());
+      pulseTile(tile);
+      if (step < steps) {
+        setTimeout(tick, STEP_MS);
+      } else if ((tile.dataset.char || " ") !== (tile.dataset.target || " ")) {
+        setTimeout(runCycle, STEP_MS);
+      } else {
+        tile.dataset.busy = "0";
+      }
+    }
+    tick();
   }
-  tick();
+
+  runCycle();
 }
 
 function buildRow(row, len = DISPLAY_LEN) {
@@ -88,11 +104,11 @@ function buildRow(row, len = DISPLAY_LEN) {
 
 function setRow(row, text, len = DISPLAY_LEN) {
   const next = normalizeText(text, len);
-  const old = row.text;
-  row.text = next.join("");
+  const old = row.tokens || [];
+  row.tokens = next;
   next.forEach((ch, i) => {
     if (!row.tiles[i]) return;
-    if (old[i] !== ch) {
+    if (old[i] !== ch || row.tiles[i].dataset.target !== ch) {
       setTimeout(() => animateTileTo(row.tiles[i], ch), i * TILE_STAGGER_MS);
     }
   });
@@ -119,6 +135,7 @@ function statusParts(data) {
   else if (data.playback_status === "stopped" || data.status === "stopped") parts.push("Stopped");
   if (data.listening || data.status === "listening") parts.push("Listening");
   if (data.backing_off || data.status === "backing_off") parts.push("Backing Off");
+  if (data.ratelimit || data.status === "ratelimit") parts.push("RATELIMIT");
   return parts.length ? parts.join(" + ") : (data.status || "Waiting");
 }
 
