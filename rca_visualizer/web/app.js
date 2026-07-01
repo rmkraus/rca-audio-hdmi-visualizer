@@ -17,6 +17,8 @@ const runtimeConfig = {
   recognitionMinRms: null,
 };
 
+let lastState = { status: "waiting" };
+
 function tokenize(text) {
   return Array.from(String(text || "").replaceAll("️", ""));
 }
@@ -209,21 +211,22 @@ function updateStats(data) {
 }
 
 function updateDisplay(data) {
+  lastState = data;
   const good = data.status === "recognized";
   document.body.dataset.playback = data.playback_status === "stopped" || data.status === "stopped" ? "stopped" : "playing";
   document.body.dataset.listening = data.listening || data.status === "listening" ? "true" : "false";
   setWrappedText(rows.track, rows.track2, good ? `${data.title || ""}` : "");
   setRow(rows.artist, good ? `${data.artist || ""}` : "");
   setRow(rows.record, good ? `${data.album || ""}` : "");
-
-  const p = progress(data);
-  setTimeRow(good ? p : null);
-  if (!good || !p) {
-    setProgressLine(rows.progress, 0);
-  } else {
-    setProgressLine(rows.progress, p.ratio);
-  }
+  refreshTimerAndProgress();
   updateStats(data);
+}
+
+function refreshTimerAndProgress() {
+  const good = lastState.status === "recognized";
+  const p = progress(lastState);
+  setTimeRow(good ? p : null);
+  setProgressLine(rows.progress, good && p ? p.ratio : 0);
 }
 
 
@@ -268,6 +271,7 @@ function init() {
   });
   fetchConfig().finally(fetchState);
   setInterval(fetchState, 2000);
+  setInterval(refreshTimerAndProgress, 1000);
   setInterval(fetchConfig, 30000);
 }
 
