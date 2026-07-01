@@ -4,9 +4,9 @@
   --metal-mid: #17140f;
   --cutout: #030302;
   --panel: #11100c;
-  --panel-top: #191711;
-  --panel-bottom: #100e0a;
-  --text: #d8c8a8;
+  --panel-top: #252016;
+  --panel-bottom: #17130d;
+  --text: #f1dfb9;
   --muted: #c7aa78;
   --amber: #ffc35a;
   --green: #baff1e;
@@ -122,15 +122,28 @@ body::after {
 }
 
 .display-row {
-  width: 74%;
+  width: 76%;
   display: grid;
   grid-template-columns: 0 1fr;
   gap: 0;
   align-items: stretch;
   position: relative;
   z-index: 1;
-  padding: 3px 0;
+  padding: 5px 0;
   border: 0;
+}
+
+.display-row::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: -8px;
+  right: -8px;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 7px;
+  background: rgba(0,0,0,0.58);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.025);
 }
 
 .row-label {
@@ -140,23 +153,25 @@ body::after {
 .display,
 .time-display-frame,
 .bulb-progress {
-  border-radius: 6px;
-  background: linear-gradient(#090806, #030302);
+  border-radius: 4px;
+  background: linear-gradient(#0d0b08, #020201);
   box-shadow:
-    inset 0 1px 2px rgba(255,255,255,0.05),
-    inset 0 -2px 5px rgba(0,0,0,0.92),
-    0 0 0 1px #050504;
+    inset 0 1px 2px rgba(255,255,255,0.08),
+    inset 0 -2px 8px rgba(0,0,0,0.96),
+    0 0 0 1px #050504,
+    0 0 0 2px rgba(255,220,150,0.035);
 }
 
 .display {
   display: grid;
   grid-template-columns: repeat(32, minmax(0, 1fr));
-  gap: 4px;
-  padding: 7px;
+  gap: 3px;
+  padding: 8px;
+  min-height: 76px;
 }
 
 .time-row {
-  margin-top: 1px;
+  margin-top: 5px;
 }
 
 .time-display-frame {
@@ -204,11 +219,11 @@ body::after {
   background: linear-gradient(#100e0a, #050504);
   border-left: 1px solid #050504;
   border-right: 1px solid #050504;
-  text-shadow: 0 1px 0 #000, 0 0 5px rgba(255,220,160,0.18);
+  text-shadow: 0 1px 0 #000, 0 0 7px rgba(255,220,160,0.30);
 }
 
 .progress-row {
-  margin-top: 1px;
+  margin-top: 5px;
 }
 
 .bulb-progress {
@@ -217,6 +232,7 @@ body::after {
   align-items: center;
   gap: 5px;
   padding: 9px;
+  min-height: 44px;
 }
 
 .progress-bulb {
@@ -252,7 +268,7 @@ body::after {
 .tile {
   position: relative;
   aspect-ratio: 0.72 / 1;
-  min-height: 42px;
+  min-height: 58px;
   border-radius: 2px;
   overflow: hidden;
   border: 0;
@@ -305,12 +321,12 @@ body::after {
 
 .char {
   font-family: "Roboto Condensed", "Arial Narrow", "DejaVu Sans Mono", monospace;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1;
-  font-size: clamp(21px, 2vw, 34px);
+  font-size: clamp(25px, 2.25vw, 40px);
   color: var(--text);
   text-transform: uppercase;
-  text-shadow: 0 1px 0 #000, 0 0 5px rgba(255,220,160,0.18);
+  text-shadow: 0 1px 0 #000, 0 0 7px rgba(255,220,160,0.30);
   will-change: transform, opacity, filter;
 }
 
