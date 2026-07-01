@@ -48,15 +48,19 @@ body::after {
   pointer-events: none;
   opacity: 0;
   background:
-    linear-gradient(90deg,
-      rgba(255,176,64,0.26) 0%,
-      rgba(255,132,24,0.11) 2.8%,
-      rgba(255,120,18,0.030) 7.5%,
-      transparent 18%,
-      transparent 82%,
-      rgba(255,120,18,0.030) 92.5%,
-      rgba(255,132,24,0.11) 97.2%,
-      rgba(255,176,64,0.26) 100%);
+    radial-gradient(ellipse at left 52%,
+      rgba(255,184,72,0.34) 0%,
+      rgba(255,138,26,0.15) 10%,
+      rgba(255,118,18,0.052) 22%,
+      transparent 38%),
+    radial-gradient(ellipse at right 52%,
+      rgba(255,184,72,0.34) 0%,
+      rgba(255,138,26,0.15) 10%,
+      rgba(255,118,18,0.052) 22%,
+      transparent 38%);
+  background-size: 22vw 74vh, 22vw 74vh;
+  background-position: left 50%, right 50%;
+  background-repeat: no-repeat;
   mix-blend-mode: screen;
   transition: opacity 140ms ease-out;
 }
@@ -120,13 +124,11 @@ body[data-sign-light="off"]::after {
   pointer-events: none;
   opacity: 0;
   background:
-    linear-gradient(90deg,
-      rgba(255,152,34,0.10) 0%,
-      rgba(255,122,22,0.045) 4.5%,
-      transparent 13%,
-      transparent 87%,
-      rgba(255,122,22,0.045) 95.5%,
-      rgba(255,152,34,0.10) 100%);
+    radial-gradient(ellipse at left 52%, rgba(255,152,34,0.12) 0%, rgba(255,122,22,0.052) 13%, transparent 31%),
+    radial-gradient(ellipse at right 52%, rgba(255,152,34,0.12) 0%, rgba(255,122,22,0.052) 13%, transparent 31%);
+  background-size: 18vw 70vh, 18vw 70vh;
+  background-position: left 50%, right 50%;
+  background-repeat: no-repeat;
   transition: opacity 120ms ease-out;
 }
 
