@@ -27,10 +27,26 @@ html, body {
   color: var(--text);
   font-family: "Roboto Condensed", "Arial Narrow", "Segoe UI", system-ui, sans-serif;
   background:
-    radial-gradient(ellipse at 50% 18%, rgba(255,205,130,0.28), transparent 38%),
-    radial-gradient(ellipse at 50% 100%, rgba(0,0,0,0.58), transparent 62%),
-    linear-gradient(90deg, rgba(0,0,0,0.28) 0 2%, transparent 2% 16%, rgba(0,0,0,0.35) 16% 18%, transparent 18%) 0 0 / 170px 100%,
-    linear-gradient(180deg, #8a4b22 0%, #5a2b12 48%, #2b1309 100%);
+    radial-gradient(ellipse at 50% 12%, rgba(255,210,135,0.24), transparent 36%),
+    radial-gradient(circle at 18% 34%, rgba(92,44,16,0.46) 0 3%, transparent 7%),
+    radial-gradient(circle at 73% 66%, rgba(65,29,11,0.50) 0 2.8%, transparent 7%),
+    repeating-linear-gradient(90deg,
+      rgba(4,4,4,0.92) 0 16px,
+      rgba(12,10,8,0.95) 16px 22px,
+      transparent 22px 82px),
+    repeating-linear-gradient(90deg,
+      rgba(255,220,150,0.08) 0 1px,
+      transparent 1px 96px),
+    repeating-linear-gradient(0deg,
+      rgba(255,226,164,0.045) 0 1px,
+      rgba(64,25,8,0.055) 1px 3px,
+      transparent 3px 11px),
+    repeating-linear-gradient(90deg,
+      #8a4f25 0 94px,
+      #6f3d1b 94px 98px,
+      #9b5b2b 98px 190px,
+      #5a2c12 190px 194px),
+    linear-gradient(180deg, #a16231 0%, #6d3516 52%, #2b1309 100%);
 }
 
 body::after {
