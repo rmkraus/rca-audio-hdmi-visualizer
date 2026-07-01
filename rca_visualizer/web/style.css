@@ -37,10 +37,10 @@ html, body {
 }
 .app {
   width: 100vw;
-  height: 100vh;
+  min-height: 100vh;
   padding: 48px 18px 18px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
 }
 .board {
