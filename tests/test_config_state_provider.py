@@ -107,6 +107,8 @@ def test_progress_and_rate_helpers():
         track_duration_ms=180000,
     )
     assert progress_start_seconds(result, 5) == 21.5
+    result.recognition_pipeline_delay_seconds = 1.25
+    assert progress_start_seconds(result, 5) == 17.75
     result.progress_start_seconds = 200.0
     assert sleep_until_progress(result, 100, missing_duration_sleep=60, max_wait=150) == 0
     assert playback_recheck_timeout(result, 50, 60, 150) == 0

@@ -7,12 +7,14 @@ from pathlib import Path
 from .audio_interface import AudioInterface
 from .recognition_provider import identify_with_shazam, wav_stats
 from .recognition_state import (
+    iso_from_timestamp,
     log_result,
     now_iso,
     progress_start_seconds,
     request_rate,
     set_metrics,
     sleep_until_progress,
+    timestamp_from_iso,
     write_state,
 )
 from .recognition_types import RecognitionResult, clear_track_fields, copy_display_result
@@ -316,6 +318,7 @@ class DetectionLoop(object):
         with tempfile.TemporaryDirectory(prefix="rca-recognition-") as tmpdir:
             sample = Path(tmpdir) / "sample.wav"
             self.audio.record_wav(self.sample_seconds, sample)
+            recording = getattr(self.audio, "last_recording", None)
             rms, duration = wav_stats(sample)
             if rms < self.min_rms:
                 result = RecognitionResult(
@@ -326,6 +329,7 @@ class DetectionLoop(object):
                     rms=rms,
                     message="stopped after quiet sample; RMS %.1f below threshold %.1f" % (rms, self.min_rms),
                 )
+                self._annotate_recording_timing(result, recording)
                 set_metrics(result, self.shazam_request_count, request_rate(self.shazam_request_times))
                 return result, duration, rms
 
@@ -335,12 +339,26 @@ class DetectionLoop(object):
             result.duration = duration
             result.rms = rms
             result.playback_status = playback_status
+            if not result.recognized_at:
+                result.recognized_at = self._now_iso()
+            self._annotate_recording_timing(result, recording)
             set_metrics(result, self.shazam_request_count, request_rate(self.shazam_request_times))
             return result, duration, rms
 
     def _wait_for_silence_or_timeout(self, timeout):
         self._set_waiting()
         return self.audio.wait_for_silence(timeout=max(0, float(timeout or 0)))
+
+    @staticmethod
+    def _annotate_recording_timing(result, recording):
+        if recording is None:
+            return result
+        result.recording_started_at = iso_from_timestamp(recording.started_at)
+        result.recording_stopped_at = iso_from_timestamp(recording.stopped_at)
+        recognized_at = timestamp_from_iso(result.recognized_at)
+        if recognized_at is not None:
+            result.recognition_pipeline_delay_seconds = max(0.0, recognized_at - float(recording.stopped_at))
+        return result
 
     def _playback_recheck_timeout(self, result):
         wait_for = sleep_until_progress(

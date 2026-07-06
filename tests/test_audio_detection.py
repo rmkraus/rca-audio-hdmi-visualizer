@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rca_visualizer.audio_interface import AudioChunk, AudioInterface
+from rca_visualizer.audio_interface import AudioChunk, AudioInterface, AudioRecording
 from rca_visualizer import detection as detection_module
 from rca_visualizer.detection import DetectionLoop
 from rca_visualizer.recognition_types import RecognitionResult
@@ -77,9 +77,12 @@ def test_clear_buffer_can_keep_preroll():
 
 def test_record_wav_writes_valid_file():
     audio = make_audio(start_gate_seconds=1, stop_gate_seconds=5)
+    chunks = [
+        AudioChunk((b"\x10\x00") * 10, 16, 1001.0, 1.0),
+        AudioChunk((b"\x20\x00") * 10, 32, 1002.0, 1.0),
+    ]
     with audio._condition:
-        audio._chunks.append(AudioChunk((b"\x10\x00") * 10, 16, time.time(), 1.0))
-        audio._chunks.append(AudioChunk((b"\x20\x00") * 10, 32, time.time(), 1.0))
+        audio._chunks.extend(chunks)
         audio._condition.notify_all()
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -90,6 +93,10 @@ def test_record_wav_writes_valid_file():
             assert wav.getframerate() == 10
             assert wav.getsampwidth() == 2
             assert wav.getnframes() == 20
+    assert audio.last_recording is not None
+    assert audio.last_recording.duration_seconds == 2.0
+    assert audio.last_recording.started_at == chunks[0].captured_at - chunks[0].duration_seconds
+    assert audio.last_recording.stopped_at == chunks[-1].captured_at
 
 
 def test_detection_loop_legacy_gate_fallback_and_overrides():
@@ -124,6 +131,7 @@ class FakeDetectionAudio(object):
 
     def record_wav(self, seconds, output_path):
         self.recorded.append((seconds, output_path))
+        self.last_recording = AudioRecording(1000.0, 1012.0, float(seconds))
         output_path.write_bytes(b"fake wav")
 
     def wait_for_silence(self, timeout=None):
@@ -142,13 +150,14 @@ def test_detection_loop_recognized_then_silence_clears_state():
     original_write_state = detection_module.write_state
     original_now_iso = detection_module.now_iso
     try:
-        detection_module.wav_stats = lambda path: (100.0, 12)
+        detection_module.wav_stats = lambda path: (100.0, 12.0)
         detection_module.identify_with_shazam = lambda path: RecognitionResult(
             status="recognized",
             title="Song",
             artist="Artist",
             track_duration_ms=180000,
             match_offset_seconds=10.0,
+            recognized_at="1970-01-01T00:16:54+00:00",
         )
         detection_module.write_state = lambda path, result: written.append(result.to_dict())
         detection_module.now_iso = lambda: "2026-07-01T00:00:00+00:00"
@@ -163,7 +172,12 @@ def test_detection_loop_recognized_then_silence_clears_state():
     assert loop.shazam_request_count == 1
     assert loop.last_display_result.status == "stopped"
     assert loop.last_display_result.playback_status == "stopped"
-    assert any(state["status"] == "recognized" and state["title"] == "Song" for state in written)
+    recognized_states = [state for state in written if state["status"] == "recognized" and state["title"] == "Song"]
+    assert recognized_states
+    recognized = recognized_states[0]
+    assert recognized["recording_stopped_at"] == "1970-01-01T00:16:52+00:00"
+    assert recognized["recognition_pipeline_delay_seconds"] == 2.0
+    assert recognized["progress_start_seconds"] == 24.0
     assert written[-1]["status"] == "stopped"
     assert written[-1]["title"] == ""
 

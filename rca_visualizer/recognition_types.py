@@ -18,6 +18,9 @@ class RecognitionResult(object):
         match_offset_seconds=None,
         progress_start_seconds=None,
         progress_padding_seconds=0,
+        recording_started_at="",
+        recording_stopped_at="",
+        recognition_pipeline_delay_seconds=None,
         playback_status="",
         listening=False,
         backing_off=False,
@@ -44,6 +47,9 @@ class RecognitionResult(object):
         self.match_offset_seconds = match_offset_seconds
         self.progress_start_seconds = progress_start_seconds
         self.progress_padding_seconds = progress_padding_seconds
+        self.recording_started_at = recording_started_at
+        self.recording_stopped_at = recording_stopped_at
+        self.recognition_pipeline_delay_seconds = recognition_pipeline_delay_seconds
         self.playback_status = playback_status
         self.listening = bool(listening)
         self.backing_off = bool(backing_off)
@@ -79,6 +85,9 @@ class RecognitionResult(object):
                 "match_offset_seconds": self.match_offset_seconds,
                 "progress_start_seconds": self.progress_start_seconds,
                 "progress_padding_seconds": self.progress_padding_seconds,
+                "recording_started_at": self.recording_started_at,
+                "recording_stopped_at": self.recording_stopped_at,
+                "recognition_pipeline_delay_seconds": self.recognition_pipeline_delay_seconds,
                 "raw": self.raw,
                 "message": self.message,
             }
@@ -93,6 +102,9 @@ def clear_track_fields(result):
     result.track_duration_ms = 0
     result.progress_start_seconds = None
     result.match_offset_seconds = None
+    result.recording_started_at = ""
+    result.recording_stopped_at = ""
+    result.recognition_pipeline_delay_seconds = None
     return result
 
 
@@ -113,6 +125,9 @@ def copy_display_result(base, status, playback_status, listening=False, backing_
         match_offset_seconds=base.match_offset_seconds,
         progress_start_seconds=base.progress_start_seconds,
         progress_padding_seconds=base.progress_padding_seconds,
+        recording_started_at=base.recording_started_at,
+        recording_stopped_at=base.recording_stopped_at,
+        recognition_pipeline_delay_seconds=base.recognition_pipeline_delay_seconds,
         playback_status=playback_status,
         listening=listening,
         backing_off=backing_off,

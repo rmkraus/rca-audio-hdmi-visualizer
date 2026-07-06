@@ -28,6 +28,9 @@ if TYPE_CHECKING:
         match_offset_seconds: Optional[float]
         progress_start_seconds: Optional[float]
         progress_padding_seconds: float
+        recording_started_at: str
+        recording_stopped_at: str
+        recognition_pipeline_delay_seconds: Optional[float]
         raw: Optional[Dict[str, Any]]
         message: str
 else:
@@ -57,6 +60,9 @@ def empty_metadata(status="stopped", playback_status="stopped"):
         match_offset_seconds=None,
         progress_start_seconds=None,
         progress_padding_seconds=0,
+        recording_started_at="",
+        recording_stopped_at="",
+        recognition_pipeline_delay_seconds=None,
         raw=None,
         message="",
     )

@@ -35,7 +35,7 @@ def wav_stats(path):
                 break
             total_rms += audioop.rms(data, width)
             chunks += 1
-    return total_rms / max(chunks, 1), int(round(float(frames) / float(rate or 1)))
+    return total_rms / max(chunks, 1), float(frames) / float(rate or 1)
 
 
 def identify_with_shazam(path):

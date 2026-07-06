@@ -8,6 +8,19 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+def iso_from_timestamp(timestamp):
+    return datetime.fromtimestamp(float(timestamp), timezone.utc).isoformat()
+
+
+def timestamp_from_iso(text):
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(str(text).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
 def write_state(path, result):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -32,7 +45,10 @@ def progress_start_seconds(result, padding_seconds):
     if result.match_offset_seconds is None:
         return None
     try:
-        return float(result.match_offset_seconds) + float(result.duration or 0) + float(padding_seconds)
+        delay = result.recognition_pipeline_delay_seconds
+        if delay is None:
+            delay = padding_seconds
+        return float(result.match_offset_seconds) + float(result.duration or 0) + float(delay or 0)
     except (TypeError, ValueError):
         return None
 

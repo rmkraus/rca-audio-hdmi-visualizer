@@ -18,6 +18,13 @@ class AudioChunk(object):
         self.duration_seconds = duration_seconds
 
 
+class AudioRecording(object):
+    def __init__(self, started_at, stopped_at, duration_seconds):
+        self.started_at = started_at
+        self.stopped_at = stopped_at
+        self.duration_seconds = duration_seconds
+
+
 class AudioActivityEvent(object):
     def __init__(self, kind, at, rms, gate_seconds):
         self.kind = kind
@@ -75,6 +82,7 @@ class AudioInterface(object):
         self._consecutive_audio = 0.0
         self._consecutive_silence = 0.0
         self._is_audio_active = False
+        self.last_recording = None
 
     @classmethod
     def from_config(
@@ -280,6 +288,14 @@ class AudioInterface(object):
                 raise RuntimeError("timed out waiting for audio chunk")
             chunks.append(chunk)
             captured += chunk.duration_seconds
+
+        if chunks:
+            stopped_at = max(chunk.captured_at for chunk in chunks)
+            started_at = min(chunk.captured_at - chunk.duration_seconds for chunk in chunks)
+            self.last_recording = AudioRecording(started_at, stopped_at, captured)
+        else:
+            now = time.time()
+            self.last_recording = AudioRecording(now, now, 0.0)
 
         with wave.open(str(output_path), "wb") as wav:
             wav.setnchannels(self.channels)
