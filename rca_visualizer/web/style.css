@@ -23,6 +23,11 @@ html, body {
   color: var(--text);
   font-family: "Roboto Condensed", "Arial Narrow", "Segoe UI", system-ui, sans-serif;
   background: #050505;
+  cursor: none;
+}
+
+*, *::before, *::after {
+  cursor: none !important;
 }
 
 body::before {
