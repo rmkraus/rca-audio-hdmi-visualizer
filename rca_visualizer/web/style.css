@@ -91,7 +91,7 @@ body[data-sign-light="off"]::after {
   position: relative;
   padding: clamp(24px, 3.8vh, 48px) clamp(22px, 3.2vw, 56px) clamp(96px, 12vh, 136px);
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 2fr) minmax(340px, 0.95fr);
   align-items: stretch;
   justify-content: stretch;
   gap: clamp(18px, 2vw, 36px);
@@ -464,7 +464,8 @@ body[data-sign-light="on"] .display-row::before {
 .lyrics-panel {
   position: relative;
   z-index: 1;
-  display: none;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   padding: clamp(20px, 2.4vh, 34px) clamp(18px, 2vw, 30px);
@@ -480,10 +481,8 @@ body[data-sign-light="on"] .display-row::before {
   overflow: hidden;
 }
 
-body[data-lyrics="available"] .lyrics-panel,
-body[data-lyrics="unavailable"][data-playback="playing"] .lyrics-panel {
-  display: flex;
-  flex-direction: column;
+body[data-playback="stopped"] .lyrics-panel {
+  opacity: 0.88;
 }
 
 .lyrics-title {
@@ -644,7 +643,9 @@ body[data-listening="true"] .lamp.listening {
     padding-right: 24px;
     grid-template-columns: minmax(0, 1fr) !important;
   }
-  .lyrics-panel { display: none !important; }
+  .lyrics-panel {
+    min-height: 32vh;
+  }
   .display { gap: 2px; padding: 5px; }
   .char { font-size: clamp(13px, 3vw, 24px); }
   .controls { left: 52px; right: 52px; }

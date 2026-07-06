@@ -277,6 +277,10 @@ function updateLyrics(data) {
   if (!available) {
     if (data.status === "recognized") {
       addCrtLine("LYRICS NOT FOUND", "active centered");
+    } else if (audioLooksActive(data)) {
+      addCrtLine("LISTENING FOR LYRICS", "future centered");
+    } else {
+      addCrtLine("NO TRACK DETECTED", "future centered");
     }
     return;
   }
