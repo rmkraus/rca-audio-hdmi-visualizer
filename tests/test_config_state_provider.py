@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -10,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from rca_visualizer.config import RuntimeConfig, parse_env_file
-from rca_visualizer.lyrics import lyrics_for_state, parse_lrc
+from rca_visualizer.lyrics import lyrics_for_state, log_lyrics_not_found, parse_lrc
 from rca_visualizer.recognition_provider import identify_with_shazam, wav_stats
 from rca_visualizer.recognition_state import (
     playback_recheck_timeout,
@@ -144,6 +145,39 @@ def test_lyrics_lrc_parsing_and_disabled_state():
     assert payload["reason"] == "disabled"
 
 
+def test_lyrics_not_found_db_dedupes_and_tracks_counts():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "lyrics-not-found.sqlite3"
+        jsonl_path = Path(tmpdir) / "lyrics-not-found.jsonl"
+        config = RuntimeConfig(
+            {
+                "LYRICS_NOT_FOUND_DB": str(db_path),
+                "LYRICS_NOT_FOUND_LOG": str(jsonl_path),
+            }
+        )
+        state = {
+            "status": "recognized",
+            "title": "Missing Song",
+            "artist": "Missing Artist",
+            "album": "Missing Album",
+            "recognized_at": "2026-07-06T20:00:00+00:00",
+            "acoustid": "12345",
+            "message": "https://www.shazam.com/track/12345/missing-song",
+            "raw": {"isrc": "USABC1234567"},
+            "track_duration_ms": 123000,
+        }
+        payload = {"available": False, "reason": "not_found"}
+        log_lyrics_not_found(config, state, payload, "abc")
+        log_lyrics_not_found(config, state, payload, "abc")
+
+        with sqlite3.connect(str(db_path)) as db:
+            rows = db.execute(
+                "SELECT cache_key, track_name, artist_name, duration, shazam_key, isrc, seen_count, contribution_status FROM lyrics_not_found"
+            ).fetchall()
+        assert rows == [("abc", "Missing Song", "Missing Artist", 123, "12345", "USABC1234567", 2, "pending")]
+        assert len(jsonl_path.read_text().splitlines()) == 2
+
+
 def test_recognition_cli_help_smoke():
     result = subprocess.run(
         [sys.executable, "-m", "rca_visualizer.recognition", "--help"],
@@ -167,6 +201,7 @@ def main():
         test_wav_stats_reads_duration_and_rms,
         test_identify_with_shazam_missing_install_reports_error,
         test_lyrics_lrc_parsing_and_disabled_state,
+        test_lyrics_not_found_db_dedupes_and_tracks_counts,
         test_recognition_cli_help_smoke,
     ]
     for test in tests:

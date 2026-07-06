@@ -1,12 +1,14 @@
 import hashlib
 import json
 import re
+import sqlite3
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 DEFAULT_LYRICS_CACHE_DIR = "/var/lib/rca-hdmi-visualizer/lyrics-cache"
+DEFAULT_LYRICS_NOT_FOUND_DB = "/var/lib/rca-hdmi-visualizer/lyrics-not-found.sqlite3"
 DEFAULT_LYRICS_TIMEOUT_SECONDS = 12.0
 DEFAULT_LYRICS_NEGATIVE_CACHE_SECONDS = 86400
 DEFAULT_LYRICS_USER_AGENT = "rca-hdmi-visualizer/1.0 (personal now-playing kiosk)"
@@ -176,11 +178,9 @@ def write_cache(path, payload):
     tmp.replace(path)
 
 
-def log_lyrics_not_found(config, state, payload, key):
-    log_path = config.str("LYRICS_NOT_FOUND_LOG", "")
-    if is_disabled(log_path):
-        return
-    record = {
+def lyrics_not_found_record(state, payload, key):
+    raw = state.get("raw") if isinstance(state.get("raw"), dict) else {}
+    return {
         "logged_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "provider": "lrclib",
         "reason": payload.get("reason") or "not_found",
@@ -189,7 +189,16 @@ def log_lyrics_not_found(config, state, payload, key):
         "albumName": payload.get("albumName") or state.get("album") or "",
         "duration": payload.get("duration") or track_duration_seconds(state),
         "cache_key": key,
+        "recognized_at": state.get("recognized_at") or "",
+        "shazam_key": state.get("acoustid") or raw.get("key") or "",
+        "shazam_url": state.get("message") or raw.get("url") or "",
+        "isrc": raw.get("isrc") or "",
     }
+
+
+def log_lyrics_not_found_jsonl(log_path, record):
+    if is_disabled(log_path):
+        return
     try:
         path = Path(log_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -197,6 +206,84 @@ def log_lyrics_not_found(config, state, payload, key):
             handle.write(json.dumps(record, sort_keys=True) + "\n")
     except Exception:
         pass
+
+
+def log_lyrics_not_found_db(db_path, record):
+    if is_disabled(db_path):
+        return
+    try:
+        path = Path(db_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(str(path), timeout=10) as db:
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS lyrics_not_found (
+                    cache_key TEXT PRIMARY KEY,
+                    provider TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    track_name TEXT NOT NULL,
+                    artist_name TEXT NOT NULL,
+                    album_name TEXT NOT NULL,
+                    duration INTEGER NOT NULL DEFAULT 0,
+                    recognized_at TEXT NOT NULL DEFAULT '',
+                    shazam_key TEXT NOT NULL DEFAULT '',
+                    shazam_url TEXT NOT NULL DEFAULT '',
+                    isrc TEXT NOT NULL DEFAULT '',
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    seen_count INTEGER NOT NULL DEFAULT 1,
+                    contribution_status TEXT NOT NULL DEFAULT 'pending',
+                    contribution_notes TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            db.execute(
+                """
+                INSERT INTO lyrics_not_found (
+                    cache_key, provider, reason, track_name, artist_name, album_name,
+                    duration, recognized_at, shazam_key, shazam_url, isrc,
+                    first_seen_at, last_seen_at, seen_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                ON CONFLICT(cache_key) DO UPDATE SET
+                    provider=excluded.provider,
+                    reason=excluded.reason,
+                    track_name=excluded.track_name,
+                    artist_name=excluded.artist_name,
+                    album_name=excluded.album_name,
+                    duration=excluded.duration,
+                    recognized_at=excluded.recognized_at,
+                    shazam_key=excluded.shazam_key,
+                    shazam_url=excluded.shazam_url,
+                    isrc=excluded.isrc,
+                    last_seen_at=excluded.last_seen_at,
+                    seen_count=lyrics_not_found.seen_count + 1
+                """,
+                (
+                    record["cache_key"],
+                    record["provider"],
+                    record["reason"],
+                    record["trackName"],
+                    record["artistName"],
+                    record["albumName"],
+                    int(record.get("duration") or 0),
+                    record.get("recognized_at") or "",
+                    record.get("shazam_key") or "",
+                    record.get("shazam_url") or "",
+                    record.get("isrc") or "",
+                    record["logged_at"],
+                    record["logged_at"],
+                ),
+            )
+    except Exception:
+        pass
+
+
+def log_lyrics_not_found(config, state, payload, key):
+    record = lyrics_not_found_record(state, payload, key)
+    db_path = config.str("LYRICS_NOT_FOUND_DB", DEFAULT_LYRICS_NOT_FOUND_DB)
+    log_lyrics_not_found_db(db_path, record)
+    log_path = config.str("LYRICS_NOT_FOUND_LOG", "")
+    log_lyrics_not_found_jsonl(log_path, record)
 
 
 def lyrics_for_state(state, config):
