@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from rca_visualizer.config import RuntimeConfig, parse_env_file
+from rca_visualizer.lyrics import lyrics_for_state, parse_lrc
 from rca_visualizer.recognition_provider import identify_with_shazam, wav_stats
 from rca_visualizer.recognition_state import (
     playback_recheck_timeout,
@@ -133,6 +134,14 @@ def test_identify_with_shazam_missing_install_reports_error():
     assert result.provider == "shazam"
 
 
+def test_lyrics_lrc_parsing_and_disabled_state():
+    lines = parse_lrc("[00:01.50]First line\n[00:02.250]Second line")
+    assert lines == [{"time": 1.5, "text": "First line"}, {"time": 2.25, "text": "Second line"}]
+    payload = lyrics_for_state({"status": "recognized", "title": "Song", "artist": "Artist"}, RuntimeConfig({}))
+    assert payload["available"] is False
+    assert payload["reason"] == "disabled"
+
+
 def test_recognition_cli_help_smoke():
     result = subprocess.run(
         [sys.executable, "-m", "rca_visualizer.recognition", "--help"],
@@ -155,6 +164,7 @@ def main():
         test_progress_and_rate_helpers,
         test_wav_stats_reads_duration_and_rms,
         test_identify_with_shazam_missing_install_reports_error,
+        test_lyrics_lrc_parsing_and_disabled_state,
         test_recognition_cli_help_smoke,
     ]
     for test in tests:

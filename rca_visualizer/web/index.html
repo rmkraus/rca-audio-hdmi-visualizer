@@ -10,30 +10,37 @@
   <div id="stats" class="stats">Status: Waiting | Shazam Requests: 0 reqs, 0 reqs/m</div>
   <main class="app">
     <section class="board" aria-label="Now playing split-flap display">
-      <div class="display-row">
-        <div class="row-label" aria-label="Track"></div>
-        <div id="line-track" class="display line"></div>
+      <div class="display-stack">
+        <div class="display-row">
+          <div class="row-label" aria-label="Track"></div>
+          <div id="line-track" class="display line"></div>
+        </div>
+        <div class="display-row title-continuation-row">
+          <div class="row-label continuation-label" aria-label="Track continued"></div>
+          <div id="line-track-2" class="display line"></div>
+        </div>
+        <div class="display-row">
+          <div class="row-label" aria-label="Artist"></div>
+          <div id="line-artist" class="display line"></div>
+        </div>
+        <div class="display-row record-row">
+          <div class="row-label" aria-label="Record"></div>
+          <div id="line-record" class="display line"></div>
+        </div>
+        <div class="display-row time-row">
+          <div class="row-label time-label" aria-label="Elapsed time"></div>
+          <div id="line-time" class="display line time-display"></div>
+        </div>
+        <div class="display-row progress-row">
+          <div class="row-label progress-label" aria-label="Progress"></div>
+          <div id="line-progress" class="bulb-progress" aria-label="Track progress"></div>
+        </div>
       </div>
-      <div class="display-row title-continuation-row">
-        <div class="row-label continuation-label" aria-label="Track continued"></div>
-        <div id="line-track-2" class="display line"></div>
-      </div>
-      <div class="display-row">
-        <div class="row-label" aria-label="Artist"></div>
-        <div id="line-artist" class="display line"></div>
-      </div>
-      <div class="display-row record-row">
-        <div class="row-label" aria-label="Record"></div>
-        <div id="line-record" class="display line"></div>
-      </div>
-      <div class="display-row time-row">
-        <div class="row-label time-label" aria-label="Elapsed time"></div>
-        <div id="line-time" class="display line time-display"></div>
-      </div>
-      <div class="display-row progress-row">
-        <div class="row-label progress-label" aria-label="Progress"></div>
-        <div id="line-progress" class="bulb-progress" aria-label="Track progress"></div>
-      </div>
+
+      <aside id="lyrics-panel" class="lyrics-panel" aria-label="Synced lyrics CRT">
+        <div class="lyrics-title">LYRICS</div>
+        <div id="lyrics-lines" class="lyrics-lines"></div>
+      </aside>
 
       <div class="controls" aria-label="Appliance controls">
         <div class="transport-control">

@@ -90,15 +90,26 @@ body[data-sign-light="off"]::after {
   min-height: calc(100vh - 40px);
   position: relative;
   padding: clamp(24px, 3.8vh, 48px) clamp(22px, 3.2vw, 56px) clamp(96px, 12vh, 136px);
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
-  justify-content: flex-start;
-  gap: 0;
+  justify-content: stretch;
+  gap: clamp(18px, 2vw, 36px);
   border-radius: 0;
   border: 0;
   background: #060606;
   box-shadow: none;
+  transition: grid-template-columns 220ms ease-out;
+}
+
+body[data-lyrics="available"] .board {
+  grid-template-columns: minmax(0, 2fr) minmax(340px, 0.95fr);
+}
+
+.display-stack {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
 }
 
 .board::before {
@@ -450,6 +461,74 @@ body[data-sign-light="on"] .display-row::before {
 
 .hinge { display: none; }
 
+.lyrics-panel {
+  position: relative;
+  z-index: 1;
+  display: none;
+  min-width: 0;
+  min-height: 0;
+  padding: clamp(20px, 2.4vh, 34px) clamp(18px, 2vw, 30px);
+  border: 1px solid rgba(255,177,58,0.22);
+  border-radius: 10px;
+  background:
+    radial-gradient(ellipse at 50% 20%, rgba(255,140,28,0.08), transparent 54%),
+    linear-gradient(180deg, #080604 0%, #020201 100%);
+  box-shadow:
+    inset 0 0 0 2px rgba(0,0,0,0.88),
+    inset 0 0 32px rgba(255,124,18,0.08),
+    0 0 26px rgba(0,0,0,0.8);
+  overflow: hidden;
+}
+
+body[data-lyrics="available"] .lyrics-panel,
+body[data-lyrics="unavailable"][data-playback="playing"] .lyrics-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.lyrics-title {
+  color: rgba(255,190,88,0.72);
+  font-family: "Courier New", monospace;
+  font-size: clamp(12px, 1.2vw, 18px);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  margin-bottom: clamp(16px, 2vh, 26px);
+}
+
+.lyrics-lines {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(10px, 1.35vh, 18px);
+  flex: 1;
+  min-height: 0;
+  color: #ffbf66;
+  font-family: "Courier New", "Roboto Mono", monospace;
+  text-transform: uppercase;
+}
+
+.lyric-line {
+  color: rgba(255,181,82,0.36);
+  font-size: clamp(18px, 1.95vw, 34px);
+  line-height: 1.18;
+  letter-spacing: 0.035em;
+  text-shadow: 0 0 9px rgba(255,139,35,0.18);
+}
+
+.lyric-line.past { opacity: 0.44; }
+.lyric-line.future { opacity: 0.60; }
+.lyric-line.active {
+  color: #ffd28a;
+  opacity: 1;
+  text-shadow:
+    0 0 8px rgba(255,183,80,0.48),
+    0 0 20px rgba(255,118,24,0.34);
+}
+.lyric-line.centered {
+  margin: auto 0;
+  text-align: center;
+}
+
 .controls {
   position: absolute;
   left: 120px;
@@ -560,7 +639,12 @@ body[data-listening="true"] .lamp.listening {
 
 
 @media (max-width: 900px) {
-  .board { padding-left: 24px; padding-right: 24px; }
+  .board {
+    padding-left: 24px;
+    padding-right: 24px;
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .lyrics-panel { display: none !important; }
   .display { gap: 2px; padding: 5px; }
   .char { font-size: clamp(13px, 3vw, 24px); }
   .controls { left: 52px; right: 52px; }

@@ -9,6 +9,7 @@ from urllib.parse import unquote, urlparse
 
 from .config import RuntimeConfig
 from .defaults import DEFAULT_MIN_RMS, DEFAULT_STATE_PATH
+from .lyrics import lyrics_for_state
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -26,6 +27,7 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 class NowPlayingHandler(SimpleHTTPRequestHandler):
     state_path = Path(DEFAULT_STATE_PATH)
     public_config = {"recognition_min_rms": DEFAULT_MIN_RMS}
+    runtime_config = RuntimeConfig({})
 
     def translate_path(self, path):
         """Serve files from WEB_DIR without depending on the process cwd.
@@ -67,6 +69,20 @@ class NowPlayingHandler(SimpleHTTPRequestHandler):
                 payload = {"status": "error", "message": str(exc)}
         else:
             payload = {"status": "waiting", "message": "No now-playing state yet"}
+        if isinstance(payload, dict):
+            try:
+                payload = dict(payload)
+                payload["lyrics"] = lyrics_for_state(payload, self.runtime_config)
+            except Exception as exc:
+                payload["lyrics"] = {
+                    "available": False,
+                    "synced": False,
+                    "source": "lrclib",
+                    "cache": "none",
+                    "reason": "error",
+                    "message": str(exc),
+                    "lines": [],
+                }
         self.send_json(payload)
 
     def serve_config(self):
@@ -93,6 +109,7 @@ def main(argv=None):
     state = args.state or config.str("NOW_PLAYING_STATE", DEFAULT_STATE_PATH)
     NowPlayingHandler.state_path = Path(state)
     NowPlayingHandler.public_config = public_runtime_config(config)
+    NowPlayingHandler.runtime_config = config
 
     server = ThreadingHTTPServer((args.host, args.port), NowPlayingHandler)
     print("Serving now-playing UI at http://%s:%s/" % (args.host, args.port), flush=True)

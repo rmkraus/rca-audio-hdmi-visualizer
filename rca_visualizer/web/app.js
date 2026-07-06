@@ -13,6 +13,11 @@ const rows = {
   time: { el: document.getElementById("line-time"), tiles: [], tokens: [], charset: TIME_CHARS },
 };
 
+const lyricsEls = {
+  panel: document.getElementById("lyrics-panel"),
+  lines: document.getElementById("lyrics-lines"),
+};
+
 const runtimeConfig = {
   recognitionMinRms: null,
 };
@@ -208,8 +213,10 @@ function updateStats(data) {
   const rpm = Number(data.shazam_requests_per_min || 0);
   const rms = numericLabel(data.rms, 1);
   const threshold = numericLabel(runtimeConfig.recognitionMinRms, 1);
+  const lyrics = data.lyrics || {};
+  const lyricLabel = lyrics.available ? "Lyrics: synced" : (data.status === "recognized" ? "Lyrics: not found" : "Lyrics: waiting");
   document.getElementById("stats").textContent =
-    `Status: ${statusParts(data)} | RMS: ${rms} | Silence Threshold: ${threshold} | Shazam Requests: ${total} reqs, ${rpm.toFixed(1)} reqs/m`;
+    `Status: ${statusParts(data)} | RMS: ${rms} | Silence Threshold: ${threshold} | ${lyricLabel} | Shazam Requests: ${total} reqs, ${rpm.toFixed(1)} reqs/m`;
 }
 
 function audioLooksActive(data) {
@@ -238,6 +245,52 @@ function updateSignLighting(data) {
   }
 }
 
+function currentLyricIndex(lyrics, data) {
+  const lines = lyrics && Array.isArray(lyrics.lines) ? lyrics.lines : [];
+  if (!lines.length) return -1;
+  const p = progress(data);
+  if (!p) return 0;
+  const offset = Number(lyrics.offset_seconds || 0);
+  const t = p.current + offset;
+  let index = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (Number(lines[i].time || 0) <= t) index = i;
+    else break;
+  }
+  return index;
+}
+
+function addCrtLine(text, className = "") {
+  const line = document.createElement("div");
+  line.className = `lyric-line ${className}`.trim();
+  line.textContent = text || "";
+  lyricsEls.lines.appendChild(line);
+}
+
+function updateLyrics(data) {
+  if (!lyricsEls.panel || !lyricsEls.lines) return;
+  const lyrics = data.lyrics || {};
+  const available = Boolean(lyrics.available && Array.isArray(lyrics.lines) && lyrics.lines.length);
+  document.body.dataset.lyrics = available ? "available" : "unavailable";
+  lyricsEls.lines.innerHTML = "";
+
+  if (!available) {
+    if (data.status === "recognized") {
+      addCrtLine("LYRICS NOT FOUND", "active centered");
+    }
+    return;
+  }
+
+  const lines = lyrics.lines;
+  const active = currentLyricIndex(lyrics, data);
+  const start = Math.max(0, active - 3);
+  const end = Math.min(lines.length, active + 6);
+  for (let i = start; i < end; i++) {
+    const cls = i === active ? "active" : (i < active ? "past" : "future");
+    addCrtLine(lines[i].text || "", cls);
+  }
+}
+
 function updateDisplay(data) {
   lastState = data;
   const good = data.status === "recognized";
@@ -247,6 +300,7 @@ function updateDisplay(data) {
   setWrappedText(rows.track, rows.track2, good ? `${data.title || ""}` : "");
   setRow(rows.artist, good ? `${data.artist || ""}` : "");
   setRow(rows.record, good ? `${data.album || ""}` : "");
+  updateLyrics(data);
   refreshTimerAndProgress();
   updateStats(data);
 }
@@ -256,6 +310,7 @@ function refreshTimerAndProgress() {
   const p = progress(lastState);
   setTimeRow(good ? p : null);
   setProgressLine(rows.progress, good && p ? p.ratio : 0);
+  updateLyrics(lastState);
 }
 
 
@@ -287,14 +342,8 @@ function init() {
   buildRow(rows.record);
   buildRow(rows.time, DISPLAY_LEN, "time");
   updateDisplay({
-    status: "recognized",
-    playback_status: "playing",
-    title: "Please Don't Bury Me (2020 Remaster)",
-    artist: "John Prine",
-    album: "Pink Cadillac",
-    track_duration_ms: 219000,
-    progress_start_seconds: 112,
-    recognized_at: new Date().toISOString(),
+    status: "waiting",
+    playback_status: "stopped",
     shazam_request_count: 0,
     shazam_requests_per_min: 0,
   });
