@@ -99,12 +99,18 @@ def clear_track_fields(result):
     result.title = ""
     result.artist = ""
     result.album = ""
+    result.score = 0.0
+    result.recognized_at = ""
+    result.acoustid = ""
+    result.musicbrainz_recording_id = ""
     result.track_duration_ms = 0
-    result.progress_start_seconds = None
     result.match_offset_seconds = None
+    result.progress_start_seconds = None
+    result.progress_padding_seconds = 0
     result.recording_started_at = ""
     result.recording_stopped_at = ""
     result.recognition_pipeline_delay_seconds = None
+    result.raw = None
     return result
 
 

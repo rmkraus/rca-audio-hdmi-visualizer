@@ -202,6 +202,7 @@ class DetectionLoop(object):
             write_state(self.state_path, listening_result)
 
             self._set_detecting()
+            self.audio.clear_buffer(keep_preroll=True)
             try:
                 result, duration, rms = self._record_and_identify_sample(playback_status)
             except Exception as exc:
@@ -282,13 +283,20 @@ class DetectionLoop(object):
                     self._log_result(result)
 
                 if no_match_count >= self.no_match_limit:
-                    self.last_display_result.backing_off = True
-                    self.last_display_result.message = "backing off for %s seconds after %s bad Shazam responses" % (
-                        self.no_match_backoff,
-                        self.no_match_limit,
+                    backoff_result = self._copy_display_result(
+                        self.last_display_result,
+                        status="backoff",
+                        playback_status=playback_status,
+                        backing_off=True,
+                        message="backing off for %s seconds after %s bad Shazam responses" % (
+                            self.no_match_backoff,
+                            self.no_match_limit,
+                        ),
                     )
-                    set_metrics(self.last_display_result, self.shazam_request_count, request_rate(self.shazam_request_times))
-                    write_state(self.state_path, self.last_display_result)
+                    self._clear_track_fields(backoff_result)
+                    set_metrics(backoff_result, self.shazam_request_count, request_rate(self.shazam_request_times))
+                    write_state(self.state_path, backoff_result)
+                    self.last_display_result = backoff_result
                     no_match_count = 0
                     self._set_waiting()
                     if self._wait_for_silence_or_timeout(self.no_match_backoff):

@@ -127,7 +127,11 @@ class FakeDetectionAudio(object):
     def __init__(self, stop_after_timeouts=1):
         self.recorded = []
         self.silence_waits = []
+        self.clear_buffer_calls = []
         self.stop_after_timeouts = stop_after_timeouts
+
+    def clear_buffer(self, keep_preroll=False):
+        self.clear_buffer_calls.append(keep_preroll)
 
     def record_wav(self, seconds, output_path):
         self.recorded.append((seconds, output_path))
@@ -170,6 +174,7 @@ def test_detection_loop_recognized_then_silence_clears_state():
         detection_module.now_iso = original_now_iso
 
     assert loop.shazam_request_count == 1
+    assert loop.audio.clear_buffer_calls == [True]
     assert loop.last_display_result.status == "stopped"
     assert loop.last_display_result.playback_status == "stopped"
     recognized_states = [state for state in written if state["status"] == "recognized" and state["title"] == "Song"]
@@ -212,6 +217,74 @@ def test_detection_loop_quiet_sample_does_not_call_shazam():
     assert called == []
 
 
+def test_detection_loop_backoff_clears_current_metadata():
+    loop = DetectionLoop(
+        FakeConfig(
+            {
+                "RECOGNITION_NO_MATCH_LIMIT": 2,
+                "RECOGNITION_NO_MATCH_BACKOFF_SECONDS": 9,
+            }
+        )
+    )
+    loop.audio = FakeDetectionAudio(stop_after_timeouts=1)
+    loop.last_display_result = RecognitionResult(
+        status="recognized",
+        playback_status="playing",
+        title="Stale Song",
+        artist="Stale Artist",
+        album="Stale Album",
+        score=0.99,
+        acoustid="12345",
+        track_duration_ms=180000,
+        match_offset_seconds=12.3,
+        progress_start_seconds=45.6,
+        progress_padding_seconds=2,
+        raw={"key": "value"},
+    )
+    written = []
+    responses = iter(
+        [
+            RecognitionResult(status="no_match", message="miss 1"),
+            RecognitionResult(status="no_match", message="miss 2"),
+        ]
+    )
+
+    original_wav_stats = detection_module.wav_stats
+    original_identify = detection_module.identify_with_shazam
+    original_write_state = detection_module.write_state
+    original_now_iso = detection_module.now_iso
+    try:
+        detection_module.wav_stats = lambda path: (100.0, 12.0)
+        detection_module.identify_with_shazam = lambda path: next(responses)
+        detection_module.write_state = lambda path, result: written.append(result.to_dict())
+        detection_module.now_iso = lambda: "2026-07-01T00:00:00+00:00"
+
+        loop._playing_loop()
+    finally:
+        detection_module.wav_stats = original_wav_stats
+        detection_module.identify_with_shazam = original_identify
+        detection_module.write_state = original_write_state
+        detection_module.now_iso = original_now_iso
+
+    backoff_states = [state for state in written if state["backing_off"]]
+    assert backoff_states
+    backoff = backoff_states[-1]
+    assert backoff["status"] == "backoff"
+    assert backoff["title"] == ""
+    assert backoff["artist"] == ""
+    assert backoff["album"] == ""
+    assert backoff["score"] == 0.0
+    assert backoff["recognized_at"] == ""
+    assert backoff["acoustid"] == ""
+    assert backoff["track_duration_ms"] == 0
+    assert backoff["match_offset_seconds"] is None
+    assert backoff["progress_start_seconds"] is None
+    assert backoff["progress_padding_seconds"] == 0
+    assert backoff["raw"] is None
+    assert backoff["message"] == "backing off for 9 seconds after 2 bad Shazam responses"
+    assert loop.audio.silence_waits[0] == 9.0
+
+
 def main():
     tests = [
         test_audio_activity_events_are_gated_once,
@@ -221,6 +294,7 @@ def main():
         test_detection_loop_minimum_recheck_wait,
         test_detection_loop_recognized_then_silence_clears_state,
         test_detection_loop_quiet_sample_does_not_call_shazam,
+        test_detection_loop_backoff_clears_current_metadata,
     ]
     for test in tests:
         test()
