@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
+import importlib.util
 import json
 import os
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import types
 import wave
 from pathlib import Path
 
@@ -176,6 +178,61 @@ def test_lyrics_not_found_db_dedupes_and_tracks_counts():
             ).fetchall()
         assert rows == [("abc", "Missing Song", "Missing Artist", 123, "12345", "USABC1234567", 2, "pending")]
         assert len(jsonl_path.read_text().splitlines()) == 2
+
+
+def test_shazam_lookup_clamps_negative_offsets_and_caches_track_metadata():
+    fake_shazamio = types.ModuleType("shazamio")
+    setattr(fake_shazamio, "Shazam", object)
+    old_shazamio = sys.modules.get("shazamio")
+    sys.modules["shazamio"] = fake_shazamio
+    try:
+        module_path = Path(__file__).resolve().parents[1] / "rca_visualizer" / "shazam_lookup.py"
+        spec = importlib.util.spec_from_file_location("test_shazam_lookup", module_path)
+        assert spec is not None and spec.loader is not None
+        shazam_lookup = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(shazam_lookup)
+    finally:
+        if old_shazamio is None:
+            sys.modules.pop("shazamio", None)
+        else:
+            sys.modules["shazamio"] = old_shazamio
+
+    assert shazam_lookup.first_match_offset({"matches": [{"offset": -4.08}]}) == 0.0
+    assert shazam_lookup.first_match_offset({"matches": [{"offset": 12.5}]}) == 12.5
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "shazam-track-cache.sqlite3"
+        old_cache = os.environ.get("SHAZAM_TRACK_CACHE_DB")
+        os.environ["SHAZAM_TRACK_CACHE_DB"] = str(db_path)
+        try:
+            result = {
+                "status": "recognized",
+                "title": "Song",
+                "artist": "Artist",
+                "album": "Album",
+                "acoustid": "123",
+                "track_duration_ms": 111000,
+                "raw": {"key": "123", "url": "u", "trackadamid": "456", "isrc": "ISRC"},
+                "message": "u",
+            }
+            shazam_lookup.write_track_cache(result)
+            cached = shazam_lookup.read_track_cache("123")
+            assert cached["title"] == "Song"
+            assert cached["raw"]["trackadamid"] == "456"
+            out = shazam_lookup.track_to_result(
+                {"track": {"key": "123"}, "matches": [{"offset": -1.0}], "track_cache": cached}
+            )
+            assert out["status"] == "recognized"
+            assert out["match_offset_seconds"] == 0.0
+            assert out["raw"]["track_cache"] == "hit"
+            with sqlite3.connect(str(db_path)) as db:
+                seen = db.execute("SELECT seen_count FROM shazam_track_cache WHERE track_key='123'").fetchone()[0]
+            assert seen == 2
+        finally:
+            if old_cache is None:
+                os.environ.pop("SHAZAM_TRACK_CACHE_DB", None)
+            else:
+                os.environ["SHAZAM_TRACK_CACHE_DB"] = old_cache
 
 
 def test_recognition_cli_help_smoke():
