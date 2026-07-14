@@ -28,10 +28,40 @@ def write_state(path, result):
     os.replace(str(tmp), str(path))
 
 
-def set_metrics(result, request_count=0, requests_per_min=0.0):
+def set_metrics(result, request_count=0, requests_per_min=0.0, response_counts=None, last_request=None):
     result.shazam_request_count = int(request_count or 0)
     result.shazam_requests_per_min = float(requests_per_min or 0.0)
+    counts = response_counts or {}
+    result.shazam_response_count = int(sum(int(value or 0) for value in counts.values()))
+    result.shazam_recognized_count = int(counts.get("recognized", 0) or 0)
+    result.shazam_no_match_count = int(counts.get("no_match", 0) or 0)
+    result.shazam_error_count = int(counts.get("error", 0) or 0)
+    if last_request:
+        result.shazam_last_request_id = str(last_request.get("id") or "")
+        result.shazam_last_request_started_at = str(last_request.get("started_at") or "")
+        result.shazam_last_response_at = str(last_request.get("response_at") or "")
+        result.shazam_last_response_status = str(last_request.get("status") or "")
+        result.shazam_last_request_duration_seconds = last_request.get("duration_seconds")
     return result
+
+
+def format_log_fields(fields):
+    parts = []
+    for key in sorted(fields):
+        value = fields[key]
+        if value is None or value == "":
+            continue
+        text = str(value).replace("\n", " ")
+        parts.append("%s=%s" % (key, text))
+    return " | ".join(parts)
+
+
+def log_shazam_request(event, **fields):
+    suffix = format_log_fields(fields)
+    if suffix:
+        print("shazam | %s | %s" % (event, suffix), flush=True)
+    else:
+        print("shazam | %s" % event, flush=True)
 
 
 def request_rate(request_times, window_seconds=60):

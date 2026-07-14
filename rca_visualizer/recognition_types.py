@@ -27,6 +27,15 @@ class RecognitionResult(object):
         ratelimit=False,
         shazam_request_count=0,
         shazam_requests_per_min=0.0,
+        shazam_response_count=0,
+        shazam_recognized_count=0,
+        shazam_no_match_count=0,
+        shazam_error_count=0,
+        shazam_last_request_id="",
+        shazam_last_request_started_at="",
+        shazam_last_response_at="",
+        shazam_last_response_status="",
+        shazam_last_request_duration_seconds=None,
         rms=None,
         raw=None,
         message="",
@@ -56,6 +65,15 @@ class RecognitionResult(object):
         self.ratelimit = bool(ratelimit)
         self.shazam_request_count = int(shazam_request_count or 0)
         self.shazam_requests_per_min = float(shazam_requests_per_min or 0.0)
+        self.shazam_response_count = int(shazam_response_count or 0)
+        self.shazam_recognized_count = int(shazam_recognized_count or 0)
+        self.shazam_no_match_count = int(shazam_no_match_count or 0)
+        self.shazam_error_count = int(shazam_error_count or 0)
+        self.shazam_last_request_id = shazam_last_request_id
+        self.shazam_last_request_started_at = shazam_last_request_started_at
+        self.shazam_last_response_at = shazam_last_response_at
+        self.shazam_last_response_status = shazam_last_response_status
+        self.shazam_last_request_duration_seconds = shazam_last_request_duration_seconds
         self.rms = rms
         self.raw = raw
         self.message = message
@@ -71,6 +89,15 @@ class RecognitionResult(object):
                 "ratelimit": self.ratelimit,
                 "shazam_request_count": self.shazam_request_count,
                 "shazam_requests_per_min": self.shazam_requests_per_min,
+                "shazam_response_count": self.shazam_response_count,
+                "shazam_recognized_count": self.shazam_recognized_count,
+                "shazam_no_match_count": self.shazam_no_match_count,
+                "shazam_error_count": self.shazam_error_count,
+                "shazam_last_request_id": self.shazam_last_request_id,
+                "shazam_last_request_started_at": self.shazam_last_request_started_at,
+                "shazam_last_response_at": self.shazam_last_response_at,
+                "shazam_last_response_status": self.shazam_last_response_status,
+                "shazam_last_request_duration_seconds": self.shazam_last_request_duration_seconds,
                 "title": self.title,
                 "artist": self.artist,
                 "album": self.album,
@@ -138,6 +165,17 @@ def copy_display_result(base, status, playback_status, listening=False, backing_
         listening=listening,
         backing_off=backing_off,
         ratelimit=ratelimit,
+        shazam_request_count=base.shazam_request_count,
+        shazam_requests_per_min=base.shazam_requests_per_min,
+        shazam_response_count=base.shazam_response_count,
+        shazam_recognized_count=base.shazam_recognized_count,
+        shazam_no_match_count=base.shazam_no_match_count,
+        shazam_error_count=base.shazam_error_count,
+        shazam_last_request_id=base.shazam_last_request_id,
+        shazam_last_request_started_at=base.shazam_last_request_started_at,
+        shazam_last_response_at=base.shazam_last_response_at,
+        shazam_last_response_status=base.shazam_last_response_status,
+        shazam_last_request_duration_seconds=base.shazam_last_request_duration_seconds,
         rms=base.rms,
         raw=base.raw,
         message=message or base.message,

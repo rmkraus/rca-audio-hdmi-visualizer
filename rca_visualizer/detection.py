@@ -9,6 +9,7 @@ from .recognition_provider import identify_with_shazam, wav_stats
 from .recognition_state import (
     iso_from_timestamp,
     log_result,
+    log_shazam_request,
     now_iso,
     progress_start_seconds,
     request_rate,
@@ -100,6 +101,8 @@ class DetectionLoop(object):
 
         self.shazam_request_count = 0
         self.shazam_request_times = []
+        self.shazam_response_counts = {"recognized": 0, "no_match": 0, "error": 0}
+        self.shazam_last_request = None
         self.last_display_result = None
         self.audio = None
 
@@ -170,7 +173,7 @@ class DetectionLoop(object):
                     recognized_at=self._now_iso(),
                     message="waiting for %.1f seconds of audio" % self.audio_start_gate_seconds,
                 )
-                set_metrics(stopped_result, self.shazam_request_count, request_rate(self.shazam_request_times))
+                self._set_metrics(stopped_result)
                 write_state(self.state_path, stopped_result)
                 self.last_display_result = stopped_result
 
@@ -198,7 +201,7 @@ class DetectionLoop(object):
                 listening=True,
                 message="recording %s second sample" % self.sample_seconds,
             )
-            set_metrics(listening_result, self.shazam_request_count, request_rate(self.shazam_request_times))
+            self._set_metrics(listening_result)
             write_state(self.state_path, listening_result)
 
             self._set_detecting()
@@ -207,7 +210,7 @@ class DetectionLoop(object):
                 result, duration, rms = self._record_and_identify_sample(playback_status)
             except Exception as exc:
                 err = RecognitionResult(status="error", playback_status=playback_status, recognized_at=self._now_iso(), message=str(exc))
-                set_metrics(err, self.shazam_request_count, request_rate(self.shazam_request_times))
+                self._set_metrics(err)
                 write_state(self.state_path, err)
                 self.last_display_result = err
                 print("recognition error: %s" % exc, file=sys.stderr, flush=True)
@@ -269,7 +272,7 @@ class DetectionLoop(object):
                     )
                     kept.duration = duration
                     kept.rms = rms
-                    set_metrics(kept, self.shazam_request_count, request_rate(self.shazam_request_times))
+                    self._set_metrics(kept)
                     write_state(self.state_path, kept)
                     self.last_display_result = kept
                     self._log_result(kept)
@@ -277,7 +280,7 @@ class DetectionLoop(object):
                     self._clear_track_fields(result)
                     result.playback_status = playback_status
                     result.message = result.message or "bad Shazam response %s/%s" % (no_match_count, self.no_match_limit)
-                    set_metrics(result, self.shazam_request_count, request_rate(self.shazam_request_times))
+                    self._set_metrics(result)
                     write_state(self.state_path, result)
                     self.last_display_result = result
                     self._log_result(result)
@@ -294,7 +297,7 @@ class DetectionLoop(object):
                         ),
                     )
                     self._clear_track_fields(backoff_result)
-                    set_metrics(backoff_result, self.shazam_request_count, request_rate(self.shazam_request_times))
+                    self._set_metrics(backoff_result)
                     write_state(self.state_path, backoff_result)
                     self.last_display_result = backoff_result
                     no_match_count = 0
@@ -318,7 +321,7 @@ class DetectionLoop(object):
             recognized_at=self._now_iso(),
             message="stopped after %.1f seconds of silence" % self.audio_stop_gate_seconds,
         )
-        set_metrics(stopped_result, self.shazam_request_count, request_rate(self.shazam_request_times))
+        self._set_metrics(stopped_result)
         write_state(self.state_path, stopped_result)
         self.last_display_result = stopped_result
 
@@ -338,20 +341,87 @@ class DetectionLoop(object):
                     message="stopped after quiet sample; RMS %.1f below threshold %.1f" % (rms, self.min_rms),
                 )
                 self._annotate_recording_timing(result, recording)
-                set_metrics(result, self.shazam_request_count, request_rate(self.shazam_request_times))
+                self._set_metrics(result)
                 return result, duration, rms
 
+            request_started = time.time()
+            request_id = "shazam-%06d" % (self.shazam_request_count + 1)
+            request_started_at = iso_from_timestamp(request_started)
             self.shazam_request_count += 1
-            self.shazam_request_times.append(time.time())
-            result = identify_with_shazam(sample)
+            self.shazam_request_times.append(request_started)
+            self.shazam_last_request = {
+                "id": request_id,
+                "started_at": request_started_at,
+                "response_at": "",
+                "status": "pending",
+                "duration_seconds": None,
+            }
+            log_shazam_request(
+                "request start",
+                request_id=request_id,
+                request_count=self.shazam_request_count,
+                requests_per_min="%.1f" % request_rate(self.shazam_request_times),
+                sample=str(sample),
+                sample_bytes=sample.stat().st_size if sample.exists() else None,
+                sample_duration_seconds="%.3f" % duration,
+                rms="%.1f" % rms,
+            )
+            try:
+                result = identify_with_shazam(sample)
+            except Exception as exc:
+                response_at = time.time()
+                elapsed = response_at - request_started
+                self._record_shazam_response(request_id, request_started_at, response_at, "error", elapsed)
+                log_shazam_request(
+                    "response error",
+                    request_id=request_id,
+                    elapsed="%.3f" % elapsed,
+                    error=exc,
+                )
+                raise
+            response_at = time.time()
+            elapsed = response_at - request_started
+            self._record_shazam_response(request_id, request_started_at, response_at, result.status, elapsed)
+            log_shazam_request(
+                "response stop",
+                request_id=request_id,
+                elapsed="%.3f" % elapsed,
+                status=result.status,
+                artist=result.artist,
+                title=result.title,
+                track_key=result.acoustid,
+                match_offset_seconds=result.match_offset_seconds,
+                message=result.message,
+            )
             result.duration = duration
             result.rms = rms
             result.playback_status = playback_status
             if not result.recognized_at:
                 result.recognized_at = self._now_iso()
             self._annotate_recording_timing(result, recording)
-            set_metrics(result, self.shazam_request_count, request_rate(self.shazam_request_times))
+            self._set_metrics(result)
             return result, duration, rms
+
+    def _set_metrics(self, result):
+        return set_metrics(
+            result,
+            self.shazam_request_count,
+            request_rate(self.shazam_request_times),
+            self.shazam_response_counts,
+            self.shazam_last_request,
+        )
+
+    def _record_shazam_response(self, request_id, request_started_at, response_at, status, elapsed):
+        normalized = status if status in self.shazam_response_counts else "error"
+        self.shazam_response_counts[normalized] = self.shazam_response_counts.get(normalized, 0) + 1
+        self.shazam_last_request = {
+            "id": request_id,
+            "started_at": request_started_at,
+            "response_at": iso_from_timestamp(response_at),
+            "status": normalized,
+            "duration_seconds": round(float(elapsed), 3),
+        }
+        return self.shazam_last_request
 
     def _wait_for_silence_or_timeout(self, timeout):
         self._set_waiting()

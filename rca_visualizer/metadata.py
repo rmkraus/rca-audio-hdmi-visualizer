@@ -14,6 +14,15 @@ if TYPE_CHECKING:
         ratelimit: bool
         shazam_request_count: int
         shazam_requests_per_min: float
+        shazam_response_count: int
+        shazam_recognized_count: int
+        shazam_no_match_count: int
+        shazam_error_count: int
+        shazam_last_request_id: str
+        shazam_last_request_started_at: str
+        shazam_last_response_at: str
+        shazam_last_response_status: str
+        shazam_last_request_duration_seconds: Optional[float]
         title: str
         artist: str
         album: str
@@ -46,6 +55,15 @@ def empty_metadata(status="stopped", playback_status="stopped"):
         ratelimit=False,
         shazam_request_count=0,
         shazam_requests_per_min=0.0,
+        shazam_response_count=0,
+        shazam_recognized_count=0,
+        shazam_no_match_count=0,
+        shazam_error_count=0,
+        shazam_last_request_id="",
+        shazam_last_request_started_at="",
+        shazam_last_response_at="",
+        shazam_last_response_status="",
+        shazam_last_request_duration_seconds=None,
         title="",
         artist="",
         album="",

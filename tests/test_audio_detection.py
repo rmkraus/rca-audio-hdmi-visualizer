@@ -174,6 +174,8 @@ def test_detection_loop_recognized_then_silence_clears_state():
         detection_module.now_iso = original_now_iso
 
     assert loop.shazam_request_count == 1
+    assert loop.shazam_response_counts == {"recognized": 1, "no_match": 0, "error": 0}
+    assert loop.shazam_last_request["status"] == "recognized"
     assert loop.audio.clear_buffer_calls == [True]
     assert loop.last_display_result.status == "stopped"
     assert loop.last_display_result.playback_status == "stopped"
@@ -183,6 +185,10 @@ def test_detection_loop_recognized_then_silence_clears_state():
     assert recognized["recording_stopped_at"] == "1970-01-01T00:16:52+00:00"
     assert recognized["recognition_pipeline_delay_seconds"] == 2.0
     assert recognized["progress_start_seconds"] == 24.0
+    assert recognized["shazam_response_count"] == 1
+    assert recognized["shazam_recognized_count"] == 1
+    assert recognized["shazam_last_request_id"] == "shazam-000001"
+    assert recognized["shazam_last_response_status"] == "recognized"
     assert written[-1]["status"] == "stopped"
     assert written[-1]["title"] == ""
 
@@ -214,6 +220,7 @@ def test_detection_loop_quiet_sample_does_not_call_shazam():
     assert duration == 12
     assert rms == 0.0
     assert loop.shazam_request_count == 0
+    assert loop.shazam_response_counts == {"recognized": 0, "no_match": 0, "error": 0}
     assert called == []
 
 
@@ -281,6 +288,9 @@ def test_detection_loop_backoff_clears_current_metadata():
     assert backoff["progress_start_seconds"] is None
     assert backoff["progress_padding_seconds"] == 0
     assert backoff["raw"] is None
+    assert backoff["shazam_response_count"] == 2
+    assert backoff["shazam_no_match_count"] == 2
+    assert backoff["shazam_last_response_status"] == "no_match"
     assert backoff["message"] == "backing off for 9 seconds after 2 bad Shazam responses"
     assert loop.audio.silence_waits[0] == 9.0
 

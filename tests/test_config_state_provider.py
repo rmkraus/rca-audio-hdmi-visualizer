@@ -71,6 +71,8 @@ def test_write_state_is_atomic_json_with_defaults():
     assert data["artist"] == "Artist"
     assert data["provider"] == "shazam"
     assert data["shazam_request_count"] == 0
+    assert data["shazam_response_count"] == 0
+    assert data["shazam_last_response_status"] == ""
 
 
 def test_result_copy_clear_and_metrics_helpers():
@@ -97,9 +99,26 @@ def test_result_copy_clear_and_metrics_helpers():
     assert copied.progress_start_seconds is None
     assert copied.match_offset_seconds is None
 
-    set_metrics(copied, request_count=3, requests_per_min=2.5)
+    set_metrics(
+        copied,
+        request_count=3,
+        requests_per_min=2.5,
+        response_counts={"recognized": 1, "no_match": 2},
+        last_request={
+            "id": "shazam-000003",
+            "started_at": "2026-07-01T00:00:00+00:00",
+            "response_at": "2026-07-01T00:00:02+00:00",
+            "status": "no_match",
+            "duration_seconds": 2.0,
+        },
+    )
     assert copied.shazam_request_count == 3
     assert copied.shazam_requests_per_min == 2.5
+    assert copied.shazam_response_count == 3
+    assert copied.shazam_recognized_count == 1
+    assert copied.shazam_no_match_count == 2
+    assert copied.shazam_last_request_id == "shazam-000003"
+    assert copied.shazam_last_response_status == "no_match"
 
 
 def test_progress_and_rate_helpers():
