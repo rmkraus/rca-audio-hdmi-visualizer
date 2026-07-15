@@ -8,16 +8,6 @@ from collections import deque
 from .defaults import DEFAULT_CHANNELS, DEFAULT_MIN_RMS, DEFAULT_SAMPLE_RATE
 
 SAMPLE_WIDTH_BYTES = 2
-FULL_SCALE_16_BIT = 32768.0
-
-
-def rms_to_dbfs(rms):
-    if rms is None or float(rms) <= 0:
-        return -120.0
-    # audioop.rms returns sample amplitude for signed 16-bit PCM.
-    import math
-
-    return 20.0 * math.log10(min(float(rms), FULL_SCALE_16_BIT) / FULL_SCALE_16_BIT)
 
 
 class AudioChunk(object):
@@ -82,7 +72,6 @@ class AudioInterface(object):
         self.audio_stopped.set()
 
         self._chunks = deque()
-        self._chunk_bytes_total = 0
         self._preroll = deque()
         self._events = deque()
         self._condition = threading.Condition()
@@ -141,7 +130,6 @@ class AudioInterface(object):
             self._stop_event.clear()
             self._error = None
             self._chunks.clear()
-            self._chunk_bytes_total = 0
             self._preroll.clear()
             self._events.clear()
             self._consecutive_audio = 0.0
@@ -191,8 +179,10 @@ class AudioInterface(object):
                 chunk = AudioChunk(data, rms, time.time(), duration)
                 with self._condition:
                     self._update_activity_locked(rms, duration)
-                    self._append_chunk_locked(chunk)
+                    self._chunks.append(chunk)
                     self._preroll.append(chunk)
+                    while len(self._chunks) > self.max_chunks:
+                        self._chunks.popleft()
                     while len(self._preroll) > self.preroll_chunks:
                         self._preroll.popleft()
                     self._condition.notify_all()
@@ -200,14 +190,6 @@ class AudioInterface(object):
             with self._condition:
                 self._error = exc
                 self._condition.notify_all()
-
-    def _append_chunk_locked(self, chunk):
-        self._chunks.append(chunk)
-        self._chunk_bytes_total += len(chunk.data)
-        max_bytes = max(1, int(self.bytes_per_second * self.max_chunks * self.chunk_seconds))
-        while self._chunks and self._chunk_bytes_total > max_bytes:
-            removed = self._chunks.popleft()
-            self._chunk_bytes_total -= len(removed.data)
 
     def _emit_event_locked(self, kind, rms, gate_seconds):
         event = AudioActivityEvent(kind, time.time(), rms, gate_seconds)
@@ -244,10 +226,8 @@ class AudioInterface(object):
     def clear_buffer(self, keep_preroll=False):
         with self._condition:
             self._chunks.clear()
-            self._chunk_bytes_total = 0
             if keep_preroll:
-                for chunk in self._preroll:
-                    self._append_chunk_locked(chunk)
+                self._chunks.extend(self._preroll)
 
     def grab_chunk(self, timeout=None):
         deadline = None if timeout is None else time.time() + float(timeout)
@@ -261,9 +241,7 @@ class AudioInterface(object):
                     if remaining <= 0:
                         return None
                     self._condition.wait(min(0.5, remaining))
-            chunk = self._chunks.popleft()
-            self._chunk_bytes_total -= len(chunk.data)
-            return chunk
+            return self._chunks.popleft()
 
     def wait_for_event(self, kinds=None, timeout=None):
         if kinds is not None:
@@ -297,52 +275,6 @@ class AudioInterface(object):
             return True
         event = self.wait_for_event(kinds=["stopped"], timeout=timeout)
         return event is not None or self.audio_stopped.is_set()
-
-    def snapshot_wav(self, seconds, output_path, timeout=None):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        target_bytes = max(1, int(float(seconds) * self.bytes_per_second))
-        deadline = None if timeout is None else time.monotonic() + float(timeout)
-        chunks = []
-        total_bytes = 0
-
-        with self._condition:
-            while True:
-                self.raise_if_failed()
-                chunks = list(self._chunks)
-                total_bytes = sum(len(chunk.data) for chunk in chunks)
-                if total_bytes >= target_bytes:
-                    break
-                if deadline is None:
-                    self._condition.wait(0.5)
-                else:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        return None
-                    self._condition.wait(min(0.5, remaining))
-
-        selected = []
-        selected_bytes = 0
-        for chunk in reversed(chunks):
-            selected.append(chunk)
-            selected_bytes += len(chunk.data)
-            if selected_bytes >= target_bytes:
-                break
-        selected.reverse()
-        data = b"".join(chunk.data for chunk in selected)
-        if len(data) > target_bytes:
-            data = data[-target_bytes:]
-        duration = float(len(data)) / float(self.bytes_per_second or 1)
-        rms = audioop.rms(data, SAMPLE_WIDTH_BYTES) if data else 0
-        stopped_at = selected[-1].captured_at if selected else time.time()
-        started_at = stopped_at - duration
-        self.last_recording = AudioRecording(started_at, stopped_at, duration)
-
-        with wave.open(str(output_path), "wb") as wav:
-            wav.setnchannels(self.channels)
-            wav.setsampwidth(SAMPLE_WIDTH_BYTES)
-            wav.setframerate(self.sample_rate)
-            wav.writeframes(data)
-        return output_path, duration, rms
 
     def record_wav(self, seconds, output_path):
         output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rca_visualizer.audio_interface import AudioChunk, AudioInterface, AudioRecording, rms_to_dbfs
+from rca_visualizer.audio_interface import AudioChunk, AudioInterface, AudioRecording
 from rca_visualizer import detection as detection_module
 from rca_visualizer.detection import DetectionLoop
 from rca_visualizer.recognition_types import RecognitionResult
@@ -99,38 +99,6 @@ def test_record_wav_writes_valid_file():
     assert audio.last_recording.stopped_at == chunks[-1].captured_at
 
 
-def test_snapshot_wav_uses_latest_ring_audio_without_consuming_buffer():
-    audio = make_audio(start_gate_seconds=1, stop_gate_seconds=5, max_queue_seconds=4)
-    chunks = [
-        AudioChunk((bytes([i, 0])) * 10, i, 1000.0 + i, 1.0)
-        for i in range(1, 5)
-    ]
-    with audio._condition:
-        for chunk in chunks:
-            audio._append_chunk_locked(chunk)
-        audio._condition.notify_all()
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        path = Path(tmpdir) / "snapshot.wav"
-        snapshot = audio.snapshot_wav(2, path, timeout=0)
-        assert snapshot is not None
-        _, duration, rms = snapshot
-        with wave.open(str(path), "rb") as wav:
-            frames = wav.readframes(wav.getnframes())
-            assert wav.getnframes() == 20
-    assert duration == 2.0
-    assert rms > 0
-    assert frames == chunks[-2].data + chunks[-1].data
-    assert len(audio._chunks) == 4
-    assert audio.last_recording.started_at == chunks[-1].captured_at - 2.0
-    assert audio.last_recording.stopped_at == chunks[-1].captured_at
-
-
-def test_rms_to_dbfs_threshold_math():
-    assert rms_to_dbfs(0) == -120.0
-    assert -45.2 < rms_to_dbfs(184) < -44.8
-
-
 def test_detection_loop_legacy_gate_fallback_and_overrides():
     legacy = DetectionLoop(FakeConfig({"RECOGNITION_AUDIO_GATE_SECONDS": 4}))
     assert legacy.audio_start_gate_seconds == 4
@@ -188,51 +156,37 @@ def test_detection_loop_logs_progress_bar_end_recheck():
 
 
 class FakeDetectionAudio(object):
-    def __init__(self, stop_after_timeouts=1, rms=1000.0, duration=10.0):
+    def __init__(self, stop_after_timeouts=1):
         self.recorded = []
-        self.snapshots = []
         self.silence_waits = []
         self.clear_buffer_calls = []
         self.stop_after_timeouts = stop_after_timeouts
-        self.rms = rms
-        self.duration = duration
-        self.last_recording = None
 
     def clear_buffer(self, keep_preroll=False):
         self.clear_buffer_calls.append(keep_preroll)
 
     def record_wav(self, seconds, output_path):
         self.recorded.append((seconds, output_path))
-        self.last_recording = AudioRecording(1000.0, 1000.0 + float(seconds), float(seconds))
+        self.last_recording = AudioRecording(1000.0, 1012.0, float(seconds))
         output_path.write_bytes(b"fake wav")
-
-    def snapshot_wav(self, seconds, output_path, timeout=None):
-        self.snapshots.append((seconds, output_path, timeout))
-        self.last_recording = AudioRecording(1000.0, 1000.0 + float(self.duration), float(self.duration))
-        output_path.write_bytes(b"fake wav")
-        return output_path, float(self.duration), float(self.rms)
 
     def wait_for_silence(self, timeout=None):
         self.silence_waits.append(timeout)
-        if timeout:
-            time.sleep(min(float(timeout), 0.02))
-        if timeout is not None and float(timeout) >= 1.0:
-            return True
-        if self.stop_after_timeouts is None:
-            return False
         return len(self.silence_waits) >= self.stop_after_timeouts
 
 
 def test_detection_loop_recognized_then_silence_clears_state():
-    loop = DetectionLoop(FakeConfig({"RECOGNITION_MIN_RECHECK_WAIT_SECONDS": 1, "RECOGNITION_SAMPLE_SECONDS": 10}))
-    loop.audio = FakeDetectionAudio(stop_after_timeouts=1, duration=10.0)
+    loop = DetectionLoop(FakeConfig({"RECOGNITION_MIN_RECHECK_WAIT_SECONDS": 1}))
+    loop.audio = FakeDetectionAudio(stop_after_timeouts=1)
     loop.last_display_result = RecognitionResult(status="stopped", playback_status="stopped")
     written = []
 
+    original_wav_stats = detection_module.wav_stats
     original_identify = detection_module.identify_with_shazam
     original_write_state = detection_module.write_state
     original_now_iso = detection_module.now_iso
     try:
+        detection_module.wav_stats = lambda path: (100.0, 12.0)
         detection_module.identify_with_shazam = lambda path: RecognitionResult(
             status="recognized",
             title="Song",
@@ -246,6 +200,7 @@ def test_detection_loop_recognized_then_silence_clears_state():
 
         loop._playing_loop()
     finally:
+        detection_module.wav_stats = original_wav_stats
         detection_module.identify_with_shazam = original_identify
         detection_module.write_state = original_write_state
         detection_module.now_iso = original_now_iso
@@ -253,14 +208,14 @@ def test_detection_loop_recognized_then_silence_clears_state():
     assert loop.shazam_request_count == 1
     assert loop.shazam_response_counts == {"recognized": 1, "no_match": 0, "error": 0}
     assert loop.shazam_last_request["status"] == "recognized"
-    assert loop.audio.snapshots
+    assert loop.audio.clear_buffer_calls == [True]
     assert loop.last_display_result.status == "stopped"
     assert loop.last_display_result.playback_status == "stopped"
     recognized_states = [state for state in written if state["status"] == "recognized" and state["title"] == "Song"]
     assert recognized_states
     recognized = recognized_states[0]
-    assert recognized["recording_stopped_at"] == "1970-01-01T00:16:50+00:00"
-    assert recognized["recognition_pipeline_delay_seconds"] == 4.0
+    assert recognized["recording_stopped_at"] == "1970-01-01T00:16:52+00:00"
+    assert recognized["recognition_pipeline_delay_seconds"] == 2.0
     assert recognized["progress_start_seconds"] == 24.0
     assert recognized["shazam_response_count"] == 1
     assert recognized["shazam_recognized_count"] == 1
@@ -270,14 +225,16 @@ def test_detection_loop_recognized_then_silence_clears_state():
     assert written[-1]["title"] == ""
 
 
-def test_detection_loop_quiet_windows_do_not_call_shazam():
-    loop = DetectionLoop(FakeConfig({"RECOGNITION_TIMEOUT_SECONDS": 0.01, "RECOGNITION_SAMPLE_SECONDS": 10}))
-    loop.audio = FakeDetectionAudio(stop_after_timeouts=None, rms=0.0, duration=10.0)
+def test_detection_loop_quiet_sample_does_not_call_shazam():
+    loop = DetectionLoop(FakeConfig({}))
+    loop.audio = FakeDetectionAudio(stop_after_timeouts=1)
     called = []
 
+    original_wav_stats = detection_module.wav_stats
     original_identify = detection_module.identify_with_shazam
     original_write_state = detection_module.write_state
     try:
+        detection_module.wav_stats = lambda path: (0.0, 12)
 
         def fail_identify(path):
             called.append(path)
@@ -287,11 +244,12 @@ def test_detection_loop_quiet_windows_do_not_call_shazam():
         detection_module.write_state = lambda path, result: None
         result, duration, rms = loop._record_and_identify_sample("playing")
     finally:
+        detection_module.wav_stats = original_wav_stats
         detection_module.identify_with_shazam = original_identify
         detection_module.write_state = original_write_state
 
-    assert result.status == "no_match"
-    assert duration == 10.0
+    assert result.status == "stopped"
+    assert duration == 12
     assert rms == 0.0
     assert loop.shazam_request_count == 0
     assert loop.shazam_response_counts == {"recognized": 0, "no_match": 0, "error": 0}
@@ -302,15 +260,12 @@ def test_detection_loop_backoff_clears_current_metadata():
     loop = DetectionLoop(
         FakeConfig(
             {
-                "RECOGNITION_NO_MATCH_LIMIT": 1,
+                "RECOGNITION_NO_MATCH_LIMIT": 2,
                 "RECOGNITION_NO_MATCH_BACKOFF_SECONDS": 9,
-                "RECOGNITION_TIMEOUT_SECONDS": 0.01,
-                "RECOGNITION_RETRY_SECONDS": 999,
-                "RECOGNITION_SAMPLE_SECONDS": 10,
             }
         )
     )
-    loop.audio = FakeDetectionAudio(stop_after_timeouts=None)
+    loop.audio = FakeDetectionAudio(stop_after_timeouts=1)
     loop.last_display_result = RecognitionResult(
         status="recognized",
         playback_status="playing",
@@ -333,16 +288,19 @@ def test_detection_loop_backoff_clears_current_metadata():
         ]
     )
 
+    original_wav_stats = detection_module.wav_stats
     original_identify = detection_module.identify_with_shazam
     original_write_state = detection_module.write_state
     original_now_iso = detection_module.now_iso
     try:
+        detection_module.wav_stats = lambda path: (100.0, 12.0)
         detection_module.identify_with_shazam = lambda path: next(responses)
         detection_module.write_state = lambda path, result: written.append(result.to_dict())
         detection_module.now_iso = lambda: "2026-07-01T00:00:00+00:00"
 
         loop._playing_loop()
     finally:
+        detection_module.wav_stats = original_wav_stats
         detection_module.identify_with_shazam = original_identify
         detection_module.write_state = original_write_state
         detection_module.now_iso = original_now_iso
@@ -362,11 +320,11 @@ def test_detection_loop_backoff_clears_current_metadata():
     assert backoff["progress_start_seconds"] is None
     assert backoff["progress_padding_seconds"] == 0
     assert backoff["raw"] is None
-    assert backoff["shazam_response_count"] == 1
-    assert backoff["shazam_no_match_count"] == 1
+    assert backoff["shazam_response_count"] == 2
+    assert backoff["shazam_no_match_count"] == 2
     assert backoff["shazam_last_response_status"] == "no_match"
-    assert backoff["message"] == "backing off for 9 seconds after 0.0 second recognition timeout"
-    assert 9.0 in loop.audio.silence_waits
+    assert backoff["message"] == "backing off for 9 seconds after 2 bad Shazam responses"
+    assert loop.audio.silence_waits[0] == 9.0
 
 
 def main():
@@ -374,13 +332,11 @@ def main():
         test_audio_activity_events_are_gated_once,
         test_clear_buffer_can_keep_preroll,
         test_record_wav_writes_valid_file,
-        test_snapshot_wav_uses_latest_ring_audio_without_consuming_buffer,
-        test_rms_to_dbfs_threshold_math,
         test_detection_loop_legacy_gate_fallback_and_overrides,
         test_detection_loop_minimum_recheck_wait,
         test_detection_loop_logs_progress_bar_end_recheck,
         test_detection_loop_recognized_then_silence_clears_state,
-        test_detection_loop_quiet_windows_do_not_call_shazam,
+        test_detection_loop_quiet_sample_does_not_call_shazam,
         test_detection_loop_backoff_clears_current_metadata,
     ]
     for test in tests:

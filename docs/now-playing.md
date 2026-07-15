@@ -12,9 +12,8 @@ is `/var/lib/rca-hdmi-visualizer/now-playing.json`.
 
 ```text
 USB audio source
-  -> continuous PCM ring buffer
-  -> newest 10-second WAV snapshot every 5 seconds
-  -> local dBFS/silence gate
+  -> 12-second WAV sample
+  -> local RMS/silence gate
   -> Shazam-style snippet lookup when audio is present
   -> optional iTunes metadata lookup for track length
   -> /var/lib/rca-hdmi-visualizer/now-playing.json
@@ -46,13 +45,10 @@ sudo systemctl restart rca-now-playing.service rca-now-playing-overlay.service
 Default settings:
 
 ```env
-RECOGNITION_SAMPLE_SECONDS=10
-RECOGNITION_RETRY_SECONDS=5
-RECOGNITION_TIMEOUT_SECONDS=90
-RECOGNITION_MIN_ENERGY_DBFS=-45
+RECOGNITION_SAMPLE_SECONDS=12
 RECOGNITION_MIN_RMS=20
-RECOGNITION_NO_MATCH_LIMIT=1
-RECOGNITION_NO_MATCH_BACKOFF_SECONDS=90
+RECOGNITION_NO_MATCH_LIMIT=3
+RECOGNITION_NO_MATCH_BACKOFF_SECONDS=30
 RECOGNITION_RATELIMIT_REQUESTS_PER_MIN=5
 RECOGNITION_RATELIMIT_BACKOFF_SECONDS=600
 RECOGNITION_PROGRESS_RESUME_PERCENT=100
@@ -63,9 +59,8 @@ RECOGNITION_PROGRESS_OFFSET_PADDING_SECONDS=5
 
 Meaning:
 
-- keep one continuous audio stream and snapshot the newest 10 seconds from its ring buffer
-- try recognition every 5 seconds for up to 90 seconds
-- measure dBFS locally before any network lookup and skip windows below `RECOGNITION_MIN_ENERGY_DBFS`
+- record a 12-second sample
+- measure RMS locally before any network lookup
 - if the sample is below `RECOGNITION_MIN_RMS`, skip Shazam and write
   `status=stopped`
 - one good audio window switches `playback_status` back to `playing`
@@ -76,8 +71,8 @@ Meaning:
   longer than that
 - if track length is unavailable, hide the progress bar and check again after 60
   seconds
-- on no match, keep trying rolling windows until `RECOGNITION_TIMEOUT_SECONDS` expires
-- after a full no-match timeout, pause for `RECOGNITION_NO_MATCH_BACKOFF_SECONDS`
+- on no match, check the next sample immediately
+- after 3 consecutive no-match samples, pause for 30 seconds
 - if Shazam requests exceed 5 per minute, set `status=ratelimit` and back off
   for 10 minutes
 
@@ -85,7 +80,7 @@ Shazam's match offset is the position where the captured snippet matched the
 track. The overlay estimates current position as:
 
 ```text
-match offset + window length + 5 seconds + elapsed wall-clock time
+match offset + sample length + 5 seconds + elapsed wall-clock time
 ```
 
 The extra 5 seconds compensates for lookup/display latency and is configurable

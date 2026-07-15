@@ -27,65 +27,6 @@ def first_match_offset(data):
         return None
 
 
-def first_match(data):
-    matches = data.get("matches") if isinstance(data, dict) else []
-    if not matches:
-        return {}
-    match = matches[0]
-    return match if isinstance(match, dict) else {}
-
-
-def first_match_value(data, key):
-    return first_match(data).get(key)
-
-
-def match_count(data):
-    matches = data.get("matches") if isinstance(data, dict) else []
-    return len(matches) if isinstance(matches, list) else 0
-
-
-def shazam_confidence(data):
-    track = data.get("track") if isinstance(data, dict) else {}
-    if not isinstance(track, dict):
-        track = {}
-    candidates = [
-        data.get("score") if isinstance(data, dict) else None,
-        data.get("confidence") if isinstance(data, dict) else None,
-        track.get("score"),
-        track.get("confidence"),
-        first_match_value(data, "score"),
-        first_match_value(data, "confidence"),
-    ]
-    for value in candidates:
-        if value is None or value == "":
-            continue
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            continue
-    return None
-
-
-def match_diagnostics(data):
-    match = first_match(data)
-    confidence = shazam_confidence(data)
-    diagnostics = {
-        "match_count": match_count(data),
-        "confidence": confidence,
-    }
-    for source, target in (
-        ("offset", "first_match_offset"),
-        ("timeskew", "first_match_timeskew"),
-        ("frequencyskew", "first_match_frequencyskew"),
-        ("score", "first_match_score"),
-        ("confidence", "first_match_confidence"),
-    ):
-        value = match.get(source)
-        if value is not None and value != "":
-            diagnostics[target] = value
-    return diagnostics
-
-
 def is_disabled(value):
     return str(value or "").strip().lower() in {"", "0", "false", "no", "off", "disabled", "none"}
 
@@ -301,14 +242,12 @@ def track_to_result(data):
     if isinstance(cached, dict) and track:
         raw = cached.get("raw") if isinstance(cached.get("raw"), dict) else {}
         offset = first_match_offset(data)
-        diagnostics = match_diagnostics(data)
-        confidence = diagnostics.get("confidence")
         return {
             "status": "recognized",
             "title": cached.get("title") or "",
             "artist": cached.get("artist") or "",
             "album": cached.get("album") or "",
-            "score": 1.0 if confidence is None else confidence,
+            "score": 1.0,
             "provider": "shazam",
             "acoustid": str(cached.get("acoustid") or raw.get("key") or (track or {}).get("key") or ""),
             "musicbrainz_recording_id": "",
@@ -321,14 +260,10 @@ def track_to_result(data):
                 "isrc": raw.get("isrc") or "",
                 "matches": data.get("matches") or [],
                 "track_cache": "hit",
-                **diagnostics,
             },
             "message": cached.get("message") or raw.get("url") or "",
         }
     if not track:
-        raw = data if isinstance(data, dict) else {}
-        raw = dict(raw)
-        raw.update(match_diagnostics(data))
         return {
             "status": "no_match",
             "title": "",
@@ -336,7 +271,7 @@ def track_to_result(data):
             "album": "",
             "score": 0.0,
             "provider": "shazam",
-            "raw": raw,
+            "raw": data,
             "message": "",
         }
 
@@ -344,15 +279,13 @@ def track_to_result(data):
     track_adam_id = first_nonempty(track.get("trackadamid"), about.get("trackadamid"))
     track_duration_ms = lookup_itunes_duration(track_adam_id)
     offset = first_match_offset(data)
-    diagnostics = match_diagnostics(data)
-    confidence = diagnostics.get("confidence")
 
     return {
         "status": "recognized",
         "title": first_nonempty(track.get("title"), about.get("title")),
         "artist": first_nonempty(track.get("subtitle"), about.get("subtitle")),
         "album": album,
-        "score": 1.0 if confidence is None else confidence,
+        "score": 1.0,
         "provider": "shazam",
         "acoustid": str(track.get("key") or ""),
         "musicbrainz_recording_id": "",
@@ -364,7 +297,6 @@ def track_to_result(data):
             "trackadamid": track_adam_id,
             "isrc": first_nonempty(track.get("isrc"), about.get("isrc")),
             "matches": data.get("matches") or [],
-            **diagnostics,
         },
         "message": first_nonempty(track.get("url"), about.get("url")),
     }

@@ -119,7 +119,7 @@ def wait_for_playback_stop(audio, timeout_seconds):
 
 def log_result(result):
     print(
-        "%s/%s: %s - %s provider=%s score=%.3f rms=%s reqs=%s rpm=%.1f match_count=%s %s"
+        "%s/%s: %s - %s provider=%s score=%.3f rms=%s reqs=%s rpm=%.1f %s"
         % (
             result.playback_status or "unknown",
             result.status,
@@ -130,7 +130,6 @@ def log_result(result):
             "%.1f" % result.rms if result.rms is not None else "",
             result.shazam_request_count,
             result.shazam_requests_per_min,
-            (result.raw or {}).get("match_count") if isinstance(result.raw, dict) else "",
             result.message,
         ),
         flush=True,
