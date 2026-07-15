@@ -254,6 +254,47 @@ def test_shazam_lookup_clamps_negative_offsets_and_caches_track_metadata():
                 os.environ["SHAZAM_TRACK_CACHE_DB"] = old_cache
 
 
+def test_shazam_lookup_logs_match_diagnostics_when_available():
+    fake_shazamio = types.ModuleType("shazamio")
+    setattr(fake_shazamio, "Shazam", object)
+    old_shazamio = sys.modules.get("shazamio")
+    sys.modules["shazamio"] = fake_shazamio
+    try:
+        module_path = Path(__file__).resolve().parents[1] / "rca_visualizer" / "shazam_lookup.py"
+        spec = importlib.util.spec_from_file_location("test_shazam_lookup_diag", module_path)
+        assert spec is not None and spec.loader is not None
+        shazam_lookup = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(shazam_lookup)
+    finally:
+        if old_shazamio is None:
+            sys.modules.pop("shazamio", None)
+        else:
+            sys.modules["shazamio"] = old_shazamio
+
+    data = {
+        "track": {"key": "999", "title": "Wrong Song", "subtitle": "Wrong Artist"},
+        "score": 0.42,
+        "matches": [
+            {
+                "offset": 12.34,
+                "timeskew": -0.001,
+                "frequencyskew": 0.002,
+                "score": 0.37,
+                "confidence": 0.41,
+            }
+        ],
+    }
+    result = shazam_lookup.track_to_result(data)
+    assert result["status"] == "recognized"
+    assert result["score"] == 0.42
+    assert result["raw"]["match_count"] == 1
+    assert result["raw"]["confidence"] == 0.42
+    assert result["raw"]["first_match_score"] == 0.37
+    assert result["raw"]["first_match_confidence"] == 0.41
+    assert result["raw"]["first_match_timeskew"] == -0.001
+    assert result["raw"]["first_match_frequencyskew"] == 0.002
+
+
 def test_recognition_cli_help_smoke():
     result = subprocess.run(
         [sys.executable, "-m", "rca_visualizer.recognition", "--help"],
@@ -278,6 +319,8 @@ def main():
         test_identify_with_shazam_missing_install_reports_error,
         test_lyrics_lrc_parsing_and_disabled_state,
         test_lyrics_not_found_db_dedupes_and_tracks_counts,
+        test_shazam_lookup_clamps_negative_offsets_and_caches_track_metadata,
+        test_shazam_lookup_logs_match_diagnostics_when_available,
         test_recognition_cli_help_smoke,
     ]
     for test in tests:

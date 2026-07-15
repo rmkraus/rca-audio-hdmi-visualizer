@@ -445,6 +445,12 @@ class DetectionLoop(object):
                     artist=result.artist,
                     title=result.title,
                     track_key=result.acoustid,
+                    score="%.3f" % result.score,
+                    match_count=(result.raw or {}).get("match_count") if isinstance(result.raw, dict) else None,
+                    first_match_score=(result.raw or {}).get("first_match_score") if isinstance(result.raw, dict) else None,
+                    first_match_confidence=(result.raw or {}).get("first_match_confidence") if isinstance(result.raw, dict) else None,
+                    first_match_timeskew=(result.raw or {}).get("first_match_timeskew") if isinstance(result.raw, dict) else None,
+                    first_match_frequencyskew=(result.raw or {}).get("first_match_frequencyskew") if isinstance(result.raw, dict) else None,
                     match_offset_seconds=result.match_offset_seconds,
                     message=result.message,
                 )
