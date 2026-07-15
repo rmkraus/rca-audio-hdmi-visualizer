@@ -4,8 +4,8 @@ import threading
 import time
 from pathlib import Path
 
-from .audio_interface import AudioInterface
-from .recognition_provider import identify_with_shazam, wav_stats
+from .audio_interface import AudioInterface, rms_to_dbfs
+from .recognition_provider import identify_with_shazam
 from .recognition_state import (
     iso_from_timestamp,
     log_progress_event,
@@ -30,11 +30,14 @@ from .defaults import (
     DEFAULT_MISSING_DURATION_RECHECK_SECONDS,
     DEFAULT_NO_MATCH_BACKOFF_SECONDS,
     DEFAULT_NO_MATCH_LIMIT,
+    DEFAULT_MIN_ENERGY_DBFS,
     DEFAULT_MIN_RECHECK_WAIT_SECONDS,
     DEFAULT_PROGRESS_OFFSET_PADDING_SECONDS,
     DEFAULT_PROGRESS_RESUME_PERCENT,
     DEFAULT_RATELIMIT_BACKOFF_SECONDS,
     DEFAULT_RATELIMIT_REQUESTS_PER_MIN,
+    DEFAULT_RECOGNITION_RETRY_SECONDS,
+    DEFAULT_RECOGNITION_TIMEOUT_SECONDS,
     DEFAULT_SAMPLE_SECONDS,
     DEFAULT_STATE_PATH,
 )
@@ -64,7 +67,10 @@ class DetectionLoop(object):
 
         self.state_path = Path(config.str("NOW_PLAYING_STATE", DEFAULT_STATE_PATH))
         self.min_rms = config.float("RECOGNITION_MIN_RMS", DEFAULT_MIN_RMS)
+        self.min_energy_dbfs = config.float("RECOGNITION_MIN_ENERGY_DBFS", DEFAULT_MIN_ENERGY_DBFS)
         self.sample_seconds = config.int("RECOGNITION_SAMPLE_SECONDS", DEFAULT_SAMPLE_SECONDS)
+        self.recognition_retry_seconds = config.float("RECOGNITION_RETRY_SECONDS", DEFAULT_RECOGNITION_RETRY_SECONDS)
+        self.recognition_timeout_seconds = config.float("RECOGNITION_TIMEOUT_SECONDS", DEFAULT_RECOGNITION_TIMEOUT_SECONDS)
         self.no_match_limit = config.int("RECOGNITION_NO_MATCH_LIMIT", DEFAULT_NO_MATCH_LIMIT)
         self.no_match_backoff = config.int("RECOGNITION_NO_MATCH_BACKOFF_SECONDS", DEFAULT_NO_MATCH_BACKOFF_SECONDS)
         self.ratelimit_threshold = config.float(
@@ -200,13 +206,13 @@ class DetectionLoop(object):
                 status=listening_status,
                 playback_status=playback_status,
                 listening=True,
-                message="recording %s second sample" % self.sample_seconds,
+                message="rolling %s second window; trying every %.1f seconds for %.1f seconds"
+                % (self.sample_seconds, self.recognition_retry_seconds, self.recognition_timeout_seconds),
             )
             self._set_metrics(listening_result)
             write_state(self.state_path, listening_result)
 
             self._set_detecting()
-            self.audio.clear_buffer(keep_preroll=True)
             try:
                 result, duration, rms = self._record_and_identify_sample(playback_status)
             except Exception as exc:
@@ -263,13 +269,13 @@ class DetectionLoop(object):
 
             if result.status in {"no_match", "error"}:
                 no_match_count += 1
-                if self.last_display_result.status == "recognized":
+                entering_backoff = no_match_count >= self.no_match_limit
+                if self.last_display_result.status == "recognized" and not entering_backoff:
                     kept = self._copy_display_result(
                         self.last_display_result,
                         status="recognized",
                         playback_status=playback_status,
                         listening=False,
-                        backing_off=no_match_count >= self.no_match_limit,
                         message=result.message
                         or "bad Shazam response %s/%s; keeping previous song on screen"
                         % (no_match_count, self.no_match_limit),
@@ -280,7 +286,7 @@ class DetectionLoop(object):
                     write_state(self.state_path, kept)
                     self.last_display_result = kept
                     self._log_result(kept)
-                else:
+                elif not entering_backoff:
                     self._clear_track_fields(result)
                     result.playback_status = playback_status
                     result.message = result.message or "bad Shazam response %s/%s" % (no_match_count, self.no_match_limit)
@@ -289,15 +295,15 @@ class DetectionLoop(object):
                     self.last_display_result = result
                     self._log_result(result)
 
-                if no_match_count >= self.no_match_limit:
+                if entering_backoff:
                     backoff_result = self._copy_display_result(
                         self.last_display_result,
                         status="backoff",
                         playback_status=playback_status,
                         backing_off=True,
-                        message="backing off for %s seconds after %s bad Shazam responses" % (
+                        message="backing off for %s seconds after %.1f second recognition timeout" % (
                             self.no_match_backoff,
-                            self.no_match_limit,
+                            self.recognition_timeout_seconds,
                         ),
                     )
                     self._clear_track_fields(backoff_result)
@@ -330,81 +336,156 @@ class DetectionLoop(object):
         self.last_display_result = stopped_result
 
     def _record_and_identify_sample(self, playback_status):
+        """Try rolling-window recognition until a match or timeout.
+
+        The audio interface is already capturing continuously. Rather than
+        clearing the stream and then waiting for a fresh one-shot sample, this
+        snapshots the newest recognition window from the ring buffer every
+        retry interval. That keeps the first request aligned with audio that
+        has already happened while still giving ShazamIO an encoded WAV file.
+        """
+        started = time.monotonic()
+        deadline = started + float(self.recognition_timeout_seconds)
+        next_attempt = started
+        last_duration = 0.0
+        last_rms = 0.0
+        last_dbfs = -120.0
+        quiet_windows = 0
+
         with tempfile.TemporaryDirectory(prefix="rca-recognition-") as tmpdir:
             sample = Path(tmpdir) / "sample.wav"
-            self.audio.record_wav(self.sample_seconds, sample)
-            recording = getattr(self.audio, "last_recording", None)
-            rms, duration = wav_stats(sample)
-            if rms < self.min_rms:
-                result = RecognitionResult(
-                    status="stopped",
-                    playback_status="stopped",
-                    recognized_at=self._now_iso(),
-                    duration=duration,
-                    rms=rms,
-                    message="stopped after quiet sample; RMS %.1f below threshold %.1f" % (rms, self.min_rms),
-                )
-                self._annotate_recording_timing(result, recording)
-                self._set_metrics(result)
-                return result, duration, rms
+            while not self._stop_requested.is_set() and time.monotonic() < deadline:
+                now = time.monotonic()
+                if now < next_attempt:
+                    wait_for = min(next_attempt - now, max(0.0, deadline - now))
+                    if self.audio.wait_for_silence(timeout=wait_for):
+                        return self._stopped_result(
+                            duration=last_duration,
+                            rms=last_rms,
+                            message="stopped during rolling recognition window",
+                        ), last_duration, last_rms
+                    continue
 
-            request_started = time.time()
-            request_id = "shazam-%06d" % (self.shazam_request_count + 1)
-            request_started_at = iso_from_timestamp(request_started)
-            self.shazam_request_count += 1
-            self.shazam_request_times.append(request_started)
-            self.shazam_last_request = {
-                "id": request_id,
-                "started_at": request_started_at,
-                "response_at": "",
-                "status": "pending",
-                "duration_seconds": None,
-            }
-            log_shazam_request(
-                "request start",
-                request_id=request_id,
-                request_count=self.shazam_request_count,
-                requests_per_min="%.1f" % request_rate(self.shazam_request_times),
-                sample=str(sample),
-                sample_bytes=sample.stat().st_size if sample.exists() else None,
-                sample_duration_seconds="%.3f" % duration,
-                rms="%.1f" % rms,
-            )
-            try:
-                result = identify_with_shazam(sample)
-            except Exception as exc:
+                next_attempt = now + float(self.recognition_retry_seconds)
+                snapshot = self.audio.snapshot_wav(
+                    self.sample_seconds,
+                    sample,
+                    timeout=min(1.0, max(0.0, deadline - time.monotonic())),
+                )
+                if snapshot is None:
+                    continue
+
+                _, duration, rms = snapshot
+                recording = getattr(self.audio, "last_recording", None)
+                dbfs = rms_to_dbfs(rms)
+                last_duration = duration
+                last_rms = rms
+                last_dbfs = dbfs
+                if dbfs < self.min_energy_dbfs:
+                    quiet_windows += 1
+                    log_shazam_request(
+                        "window skip quiet",
+                        sample=str(sample),
+                        sample_bytes=sample.stat().st_size if sample.exists() else None,
+                        sample_duration_seconds="%.3f" % duration,
+                        rms="%.1f" % rms,
+                        dbfs="%.1f" % dbfs,
+                        min_energy_dbfs="%.1f" % self.min_energy_dbfs,
+                    )
+                    continue
+
+                request_started = time.time()
+                request_id = "shazam-%06d" % (self.shazam_request_count + 1)
+                request_started_at = iso_from_timestamp(request_started)
+                self.shazam_request_count += 1
+                self.shazam_request_times.append(request_started)
+                requests_per_min = request_rate(self.shazam_request_times)
+                self.shazam_last_request = {
+                    "id": request_id,
+                    "started_at": request_started_at,
+                    "response_at": "",
+                    "status": "pending",
+                    "duration_seconds": None,
+                }
+                log_shazam_request(
+                    "request start",
+                    request_id=request_id,
+                    request_count=self.shazam_request_count,
+                    requests_per_min="%.1f" % requests_per_min,
+                    sample=str(sample),
+                    sample_bytes=sample.stat().st_size if sample.exists() else None,
+                    sample_duration_seconds="%.3f" % duration,
+                    rms="%.1f" % rms,
+                    dbfs="%.1f" % dbfs,
+                    rolling_window_seconds="%.1f" % self.sample_seconds,
+                    retry_seconds="%.1f" % self.recognition_retry_seconds,
+                    timeout_seconds="%.1f" % self.recognition_timeout_seconds,
+                )
+                try:
+                    result = identify_with_shazam(sample)
+                except Exception as exc:
+                    response_at = time.time()
+                    elapsed = response_at - request_started
+                    self._record_shazam_response(request_id, request_started_at, response_at, "error", elapsed)
+                    log_shazam_request(
+                        "response error",
+                        request_id=request_id,
+                        elapsed="%.3f" % elapsed,
+                        error=exc,
+                    )
+                    continue
                 response_at = time.time()
                 elapsed = response_at - request_started
-                self._record_shazam_response(request_id, request_started_at, response_at, "error", elapsed)
+                self._record_shazam_response(request_id, request_started_at, response_at, result.status, elapsed)
                 log_shazam_request(
-                    "response error",
+                    "response stop",
                     request_id=request_id,
                     elapsed="%.3f" % elapsed,
-                    error=exc,
+                    status=result.status,
+                    artist=result.artist,
+                    title=result.title,
+                    track_key=result.acoustid,
+                    match_offset_seconds=result.match_offset_seconds,
+                    message=result.message,
                 )
-                raise
-            response_at = time.time()
-            elapsed = response_at - request_started
-            self._record_shazam_response(request_id, request_started_at, response_at, result.status, elapsed)
-            log_shazam_request(
-                "response stop",
-                request_id=request_id,
-                elapsed="%.3f" % elapsed,
-                status=result.status,
-                artist=result.artist,
-                title=result.title,
-                track_key=result.acoustid,
-                match_offset_seconds=result.match_offset_seconds,
-                message=result.message,
-            )
-            result.duration = duration
-            result.rms = rms
-            result.playback_status = playback_status
-            if not result.recognized_at:
-                result.recognized_at = self._now_iso()
-            self._annotate_recording_timing(result, recording)
-            self._set_metrics(result)
-            return result, duration, rms
+                result.duration = duration
+                result.rms = rms
+                result.playback_status = playback_status
+                if not result.recognized_at:
+                    result.recognized_at = self._now_iso()
+                self._annotate_recording_timing(result, recording)
+                self._set_metrics(result)
+                if result.status == "recognized":
+                    return result, duration, rms
+                if result.shazam_requests_per_min > self.ratelimit_threshold:
+                    return result, duration, rms
+
+        result = RecognitionResult(
+            status="no_match",
+            playback_status=playback_status,
+            recognized_at=self._now_iso(),
+            duration=last_duration,
+            rms=last_rms,
+            message="no match after %.1f seconds; last window %.1f dBFS, %s quiet windows skipped" % (
+                self.recognition_timeout_seconds,
+                last_dbfs,
+                quiet_windows,
+            ),
+        )
+        self._set_metrics(result)
+        return result, last_duration, last_rms
+
+    def _stopped_result(self, duration=0.0, rms=0.0, message=""):
+        result = RecognitionResult(
+            status="stopped",
+            playback_status="stopped",
+            recognized_at=self._now_iso(),
+            duration=duration,
+            rms=rms,
+            message=message or "stopped after quiet sample; RMS %.1f below threshold %.1f" % (rms, self.min_rms),
+        )
+        self._set_metrics(result)
+        return result
 
     def _set_metrics(self, result):
         return set_metrics(

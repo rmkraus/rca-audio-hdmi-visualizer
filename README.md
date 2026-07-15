@@ -96,7 +96,7 @@ sudo rca-now-playing identify-once
 jq . /var/lib/rca-hdmi-visualizer/now-playing.json
 ```
 
-The default conservative sample length is 12 seconds. See `docs/now-playing.md` for tuning sample length, polling interval, silence detection, and overlay opacity.
+The default pipeline keeps a continuous audio ring buffer, snapshots the newest 10 seconds every 5 seconds, and tries for up to 90 seconds before a no-match backoff. See `docs/now-playing.md` for tuning sample length, retry cadence, silence detection, and overlay opacity.
 
 ## Hardware notes
 
@@ -117,8 +117,11 @@ Useful settings:
 - `SINK_MATCH`: case-insensitive text used to identify the HDMI output sink.
 - `LOOPBACK_LATENCY_MSEC`: requested PipeWire/PulseAudio loopback latency.
 - `RECOGNITION_ENABLED`: enables/disables now-playing recognition.
-- `RECOGNITION_SAMPLE_SECONDS`: sample length sent to the recognizer; 12 seconds is the default, 15-20 can improve difficult passages.
-- `RECOGNITION_MIN_RMS`: silence gate; samples quieter than this skip lookup.
+- `RECOGNITION_SAMPLE_SECONDS`: rolling audio window sent to the recognizer; 10 seconds is the default.
+- `RECOGNITION_RETRY_SECONDS`: cadence for retrying recognition while searching for a match.
+- `RECOGNITION_TIMEOUT_SECONDS`: maximum search time before declaring no-match.
+- `RECOGNITION_MIN_ENERGY_DBFS`: energy gate; quieter windows skip lookup.
+- `RECOGNITION_MIN_RMS`: legacy activity gate used for start/stop detection.
 - `OVERLAY_ALPHA`: fullscreen overlay opacity.
 
 To inspect audio device names after install:
