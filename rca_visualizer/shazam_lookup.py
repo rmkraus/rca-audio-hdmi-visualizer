@@ -8,6 +8,10 @@ import urllib.parse
 import urllib.request
 
 from shazamio import Shazam
+try:
+    from shazamio_core import SearchParams
+except Exception:  # pragma: no cover - compatibility with older shazamio installs
+    SearchParams = None
 
 
 DEFAULT_TRACK_CACHE_DB = "/var/lib/rca-hdmi-visualizer/shazam-track-cache.sqlite3"
@@ -146,10 +150,34 @@ def write_track_cache(result):
         pass
 
 
+def shazam_segment_seconds():
+    for key in ("SHAZAM_SEGMENT_SECONDS", "RECOGNITION_SAMPLE_SECONDS"):
+        value = os.environ.get(key)
+        if not value:
+            continue
+        try:
+            seconds = int(float(value))
+        except (TypeError, ValueError):
+            continue
+        if seconds > 0:
+            return seconds
+    return 10
+
+
 async def recognize(path):
-    shazam = Shazam()
+    segment_seconds = shazam_segment_seconds()
+    try:
+        shazam = Shazam(segment_duration_seconds=segment_seconds)
+    except TypeError:
+        shazam = Shazam()
     if hasattr(shazam, "recognize"):
-        data = await shazam.recognize(path)
+        if SearchParams is not None:
+            try:
+                data = await shazam.recognize(path, options=SearchParams(segment_seconds))
+            except TypeError:
+                data = await shazam.recognize(path)
+        else:
+            data = await shazam.recognize(path)
     else:
         data = await shazam.recognize_song(path)
 

@@ -8,6 +8,7 @@ from .audio_interface import AudioInterface
 from .recognition_provider import identify_with_shazam, wav_stats
 from .recognition_state import (
     iso_from_timestamp,
+    log_progress_event,
     log_result,
     log_shazam_request,
     now_iso,
@@ -251,10 +252,13 @@ class DetectionLoop(object):
                 write_state(self.state_path, result)
                 self.last_display_result = result
                 self._log_result(result)
-                timeout = self._playback_recheck_timeout(result)
+                wait_for, timeout = self._playback_recheck_details(result)
+                self._log_progress_recheck(result, wait_for, timeout)
                 self._set_waiting()
                 if self._wait_for_silence_or_timeout(timeout):
+                    self._log_progress_event("recheck wait interrupted by silence", **self._progress_log_fields(result, timeout_seconds=timeout))
                     break
+                self._log_progress_event("recheck wait complete", **self._progress_log_fields(result, timeout_seconds=timeout))
                 continue
 
             if result.status in {"no_match", "error"}:
@@ -439,13 +443,57 @@ class DetectionLoop(object):
         return result
 
     def _playback_recheck_timeout(self, result):
+        wait_for, timeout = self._playback_recheck_details(result)
+        return timeout
+
+    def _playback_recheck_details(self, result):
         wait_for = sleep_until_progress(
             result,
             self.progress_resume_percent,
             missing_duration_sleep=self.missing_duration_recheck,
             max_wait=self.max_recheck_wait,
         )
-        return max(int(self.min_recheck_wait), int(wait_for))
+        timeout = max(int(self.min_recheck_wait), int(wait_for))
+        return int(wait_for), int(timeout)
+
+    def _progress_log_fields(self, result, timeout_seconds=None, wait_for_seconds=None):
+        track_seconds = float(result.track_duration_ms or 0) / 1000.0 if result.track_duration_ms else 0.0
+        seconds_until_progress_end = None
+        if result.progress_start_seconds is not None and track_seconds > 0:
+            seconds_until_progress_end = max(0.0, track_seconds - float(result.progress_start_seconds))
+        fields = {
+            "artist": result.artist,
+            "title": result.title,
+            "track_key": result.acoustid,
+            "recognized_at": result.recognized_at,
+            "progress_start_seconds": (
+                "%.3f" % result.progress_start_seconds if result.progress_start_seconds is not None else None
+            ),
+            "track_duration_seconds": "%.3f" % track_seconds if track_seconds else None,
+            "seconds_until_progress_end": (
+                "%.3f" % seconds_until_progress_end if seconds_until_progress_end is not None else None
+            ),
+            "progress_resume_percent": "%.1f" % self.progress_resume_percent,
+            "min_recheck_wait_seconds": self.min_recheck_wait,
+        }
+        if wait_for_seconds is not None:
+            fields["computed_wait_seconds"] = wait_for_seconds
+        if timeout_seconds is not None:
+            fields["actual_wait_seconds"] = timeout_seconds
+        return fields
+
+    def _log_progress_recheck(self, result, wait_for, timeout):
+        fields = self._progress_log_fields(result, timeout_seconds=timeout, wait_for_seconds=wait_for)
+        if result.progress_start_seconds is None or not result.track_duration_ms:
+            self._log_progress_event("recheck scheduled without progress end", **fields)
+        elif wait_for <= 0:
+            self._log_progress_event("progress bar already at end; min recheck wait applies", **fields)
+        else:
+            self._log_progress_event("progress bar end recheck scheduled", **fields)
+
+    @staticmethod
+    def _log_progress_event(event, **fields):
+        return log_progress_event(event, **fields)
 
     @staticmethod
     def _copy_display_result(base, status, playback_status, listening=False, backing_off=False, ratelimit=False, message=""):

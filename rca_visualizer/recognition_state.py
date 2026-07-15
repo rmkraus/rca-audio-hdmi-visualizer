@@ -64,6 +64,14 @@ def log_shazam_request(event, **fields):
         print("shazam | %s" % event, flush=True)
 
 
+def log_progress_event(event, **fields):
+    suffix = format_log_fields(fields)
+    if suffix:
+        print("progress | %s | %s" % (event, suffix), flush=True)
+    else:
+        print("progress | %s" % event, flush=True)
+
+
 def request_rate(request_times, window_seconds=60):
     now = time.time()
     while request_times and request_times[0] < now - float(window_seconds):

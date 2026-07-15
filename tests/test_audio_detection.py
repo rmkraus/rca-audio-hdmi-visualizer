@@ -123,6 +123,38 @@ def test_detection_loop_minimum_recheck_wait():
     assert loop._playback_recheck_timeout(result) == 7
 
 
+def test_detection_loop_logs_progress_bar_end_recheck():
+    loop = DetectionLoop(FakeConfig({"RECOGNITION_MIN_RECHECK_WAIT_SECONDS": 45}))
+    result = RecognitionResult(
+        status="recognized",
+        title="Angel From Montgomery",
+        artist="John Prine",
+        acoustid="2903216",
+        track_duration_ms=200000,
+        progress_start_seconds=210.0,
+        recognized_at="2026-07-14T14:19:10+00:00",
+    )
+    events = []
+
+    original_log_progress_event = detection_module.log_progress_event
+    try:
+        detection_module.log_progress_event = lambda event, **fields: events.append((event, fields))
+        wait_for, timeout = loop._playback_recheck_details(result)
+        loop._log_progress_recheck(result, wait_for, timeout)
+    finally:
+        detection_module.log_progress_event = original_log_progress_event
+
+    assert wait_for == 0
+    assert timeout == 45
+    assert events
+    event, fields = events[0]
+    assert event == "progress bar already at end; min recheck wait applies"
+    assert fields["title"] == "Angel From Montgomery"
+    assert fields["seconds_until_progress_end"] == "0.000"
+    assert fields["computed_wait_seconds"] == 0
+    assert fields["actual_wait_seconds"] == 45
+
+
 class FakeDetectionAudio(object):
     def __init__(self, stop_after_timeouts=1):
         self.recorded = []
@@ -302,6 +334,7 @@ def main():
         test_record_wav_writes_valid_file,
         test_detection_loop_legacy_gate_fallback_and_overrides,
         test_detection_loop_minimum_recheck_wait,
+        test_detection_loop_logs_progress_bar_end_recheck,
         test_detection_loop_recognized_then_silence_clears_state,
         test_detection_loop_quiet_sample_does_not_call_shazam,
         test_detection_loop_backoff_clears_current_metadata,
